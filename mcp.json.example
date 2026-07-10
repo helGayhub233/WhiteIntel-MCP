@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "whiteintel": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/absolute/path/to/WhiteIntel-MCP",
+        "run",
+        "whiteintel-mcp"
+      ],
+      "env": {
+        "WHITEINTEL_API_KEY": "your_whiteintel_api_key",
+        "WHITEINTEL_BASE_URL": "https://api.whiteintel.io"
+      }
+    }
+  }
+}
