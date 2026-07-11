@@ -88,6 +88,13 @@ class LastLeaksRequest(_LastLeaksBase, NonEmptyQueryMixin):
         default="all",
         description="Breach category filter: 'all', 'consumer', or 'corporate'.",
     )
+    sortBy: Literal["index_date", "log_date"] = Field(
+        default="index_date",
+        description=(
+            "Sort key: 'index_date' (ingestion time, default) or "
+            "'log_date' (root incident date)."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -585,3 +592,162 @@ class AuditLogsRequest(ApiKeyMixin):
         ge=1,
         description="Page number for pagination.",
     )
+
+
+# ---------------------------------------------------------------------------
+# Card Check
+# ---------------------------------------------------------------------------
+
+CardCheckSelector = Literal["bin", "issuer", "country"]
+CardCheckSortBy = Literal["exposed_date", "expiry"]
+CardCheckSortDir = Literal["asc", "desc"]
+CardCheckType = Literal["credit", "debit"]
+
+
+class CardCheckRequest(ApiKeyMixin):
+    """Request model for /card_check.php
+
+    Exactly one primary selector (bin / issuer / country) is required.
+    All other parameters are optional filters.
+    """
+
+    # ── Primary selector (exactly one required) ─────────────────
+    bin: str | None = Field(
+        default=None,
+        min_length=6,
+        max_length=8,
+        pattern=r"^\d{6,8}$",
+        description="BIN (6 or 8 digits).",
+    )
+    issuer: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        description="Issuing institution name.",
+    )
+    country: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=2,
+        pattern=r"^[A-Z]{2}$",
+        description="ISO 3166-1 alpha-2 country code.",
+    )
+
+    # ── Optional filters ────────────────────────────────────────
+    networks: list[str] | None = Field(
+        default=None,
+        description="Card network filter (e.g. ['VISA', 'MASTERCARD']).",
+    )
+    types: list[str] | None = Field(
+        default=None,
+        description="Card type filter (e.g. ['credit', 'debit']).",
+    )
+    brands: list[str] | None = Field(
+        default=None,
+        description="Card brand filter.",
+    )
+    valid_only: int = Field(
+        default=0,
+        ge=0,
+        le=1,
+        description="Return only cards with valid (non-expired) expiry.",
+    )
+
+    # ── Date range ──────────────────────────────────────────────
+    exposed_after: str | None = Field(
+        default=None,
+        description="Lower bound of exposed date, YYYY-MM-DD.",
+    )
+    exposed_before: str | None = Field(
+        default=None,
+        description="Upper bound of exposed date, YYYY-MM-DD.",
+    )
+
+    # ── Sorting & pagination ────────────────────────────────────
+    sort_by: CardCheckSortBy = Field(
+        default="exposed_date",
+        description="Sort field: 'exposed_date' or 'expiry'.",
+    )
+    sort_dir: CardCheckSortDir = Field(
+        default="desc",
+        description="Sort direction: 'asc' or 'desc'.",
+    )
+    page: int = Field(
+        default=1,
+        ge=1,
+        description="Page number (fixed 20 records per page).",
+    )
+
+    @model_validator(mode="after")
+    def _exactly_one_primary_selector(self):
+        selectors = [
+            k for k in ("bin", "issuer", "country")
+            if getattr(self, k, None) is not None
+        ]
+        if len(selectors) != 1:
+            raise ValueError(
+                "Exactly one primary selector must be supplied: bin, issuer, or country."
+            )
+        return self
+
+
+# ---------------------------------------------------------------------------
+# Threat Feed Darkweb Chatters (add-on)
+# ---------------------------------------------------------------------------
+
+class DarkwebChattersRequest(ApiKeyMixin, DateRangeMixin):
+    """Request model for /get_threat_feeds.php (Darkweb Chatters add-on).
+
+    Shares the same upstream endpoint as the standard Threat Feed but is
+    governed by a dedicated daily quota (20 calls/day) and 0.2 QPS burst limit.
+    """
+
+    limit: int = Field(
+        default=100,
+        ge=1,
+        le=100,
+        description="Maximum records per page (1–100).",
+    )
+    page: int = Field(
+        default=1,
+        ge=1,
+        description="Page number.",
+    )
+    mode: ThreatFeedMode | None = Field(
+        default=None,
+        description="Set to 'public_news' for public news mode.",
+    )
+    search: str | None = Field(
+        default=None,
+        description="Free-text search (min 4 characters).",
+    )
+    category: str | list[str] | None = Field(
+        default=None,
+        description="Post category filter, up to 2 values.",
+    )
+    industry: str | list[str] | None = Field(
+        default=None,
+        description="Victim industry filter, up to 2 values.",
+    )
+    network: str | list[str] | None = Field(
+        default=None,
+        description="Network of origin filter.",
+    )
+    taxonomy: ThreatFeedTaxonomy | None = Field(
+        default=None,
+        description="Taxonomy mode: 'categories', 'industries', or 'networks'.",
+    )
+
+    @field_validator("search")
+    @classmethod
+    def _search_min_length(cls, value: str | None) -> str | None:
+        if value is not None and value.strip() and len(value.strip()) < 4:
+            raise ValueError("Search must be at least 4 characters when supplied.")
+        return value
+
+    @field_validator("category", "industry")
+    @classmethod
+    def _max_two_values(cls, value: str | list[str] | None) -> str | list[str] | None:
+        if isinstance(value, list) and len(value) > 2:
+            raise ValueError("At most 2 values are supported.")
+        return value
