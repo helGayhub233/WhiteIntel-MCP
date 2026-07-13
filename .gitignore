@@ -9,3 +9,4 @@ __pycache__/
 dist/
 build/
 tests/
+/*代码缺陷报告*.md

@@ -5,15 +5,22 @@ from __future__ import annotations
 import argparse
 import os
 from contextlib import asynccontextmanager
+from ipaddress import ip_address
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Literal
 
 from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel
+from mcp.server.auth.provider import TokenVerifier
+from mcp.server.auth.settings import AuthSettings
+from mcp.types import ToolAnnotations
+from pydantic import BaseModel, Field
 
 from whiteintel_mcp import __version__
 from whiteintel_mcp.models.endpoints import (
     AuditLogsRequest,
+    BreachType,
+    CardCheckSortBy,
+    CardCheckSortDir,
     CardCheckRequest,
     ComputerLeaksRequest,
     ConsumerLeaksRequest,
@@ -25,13 +32,26 @@ from whiteintel_mcp.models.endpoints import (
     LeaksByIDRequest,
     LookalikeDomainsRequest,
     OverallStatsRequest,
+    OverallMetric,
+    SortOrder,
+    SourceType,
+    SupplierSort,
+    SupplierStatus,
+    SupplierTier,
     SupplierRequest,
     ThreatFeedRequest,
+    ThreatFeedMode,
+    ThreatFeedTaxonomy,
     UsernameLeaksRequest,
+    WatchlistEntryType,
     WatchlistManageRequest,
+    WatchlistStatus,
 )
+from whiteintel_mcp.models.responses import WhiteIntelResponse
 from whiteintel_mcp.services.upstream_rate_limiter import UpstreamRateLimiter
 from whiteintel_mcp.services.whiteintel_client import WhiteIntelClient
+from whiteintel_mcp.tool_errors import to_tool_error
+from whiteintel_mcp.tool_policy import ToolPolicy, env_flag
 
 
 SERVER_INSTRUCTIONS = (
@@ -41,19 +61,56 @@ SERVER_INSTRUCTIONS = (
     "WHITEINTEL_API_KEY server environment variable."
 )
 
+READ_ONLY_TOOL = ToolAnnotations(
+    readOnlyHint=True,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=True,
+)
+MUTATING_TOOL = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=False,
+    idempotentHint=False,
+    openWorldHint=True,
+)
+IDEMPOTENT_MUTATION_TOOL = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=True,
+)
+DESTRUCTIVE_TOOL = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=True,
+    idempotentHint=False,
+    openWorldHint=True,
+)
+
+PositiveInt = Annotated[int, Field(ge=1)]
+NonNegativeInt = Annotated[int, Field(ge=0)]
+BinaryInt = Annotated[int, Field(ge=0, le=1)]
+Days = Annotated[int, Field(ge=1, le=30)]
+Limit100 = Annotated[int, Field(ge=1, le=100)]
+Limit200 = Annotated[int, Field(ge=1, le=200)]
+Limit5000 = Annotated[int, Field(ge=1, le=5000)]
+CardBin = Annotated[str, Field(min_length=6, max_length=8, pattern=r"^\d{6,8}$")]
+CountryCode = Annotated[str, Field(min_length=2, max_length=2, pattern=r"^[A-Z]{2}$")]
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return False
+
 
 def apply_server_metadata(server: FastMCP) -> None:
     """Keep FastMCP handshake metadata aligned with package metadata."""
     mcp_server = getattr(server, "_mcp_server", None)
     if mcp_server is not None:
         mcp_server.version = __version__
-
-
-def _csv(value: str | None) -> list[str] | None:
-    if value is None:
-        return None
-    items = [item.strip() for item in value.split(",") if item.strip()]
-    return items or None
 
 
 def _register_doc_resources(mcp: FastMCP) -> None:
@@ -84,14 +141,26 @@ def create_server(
     port: int = 8000,
     streamable_http_path: str = "/mcp",
     sse_path: str = "/sse",
+    *,
+    enable_write_tools: bool | None = None,
+    auth: AuthSettings | None = None,
+    token_verifier: TokenVerifier | None = None,
 ) -> FastMCP:
     """Build and return the configured FastMCP server instance."""
 
     client = WhiteIntelClient(rate_limiter=UpstreamRateLimiter())
 
-    async def call(endpoint: str, request: BaseModel) -> dict[str, Any]:
+    if (auth is None) != (token_verifier is None):
+        raise ValueError("auth and token_verifier must be provided together.")
+
+    policy = ToolPolicy.from_environment(enable_write_tools=enable_write_tools)
+
+    async def call(endpoint: str, request: BaseModel) -> WhiteIntelResponse:
         body = request.model_dump(exclude_none=True)
-        return await client.call(endpoint, body)
+        result = await client.call(endpoint, body)
+        if not result.get("success", False):
+            raise to_tool_error(result)
+        return WhiteIntelResponse.model_validate(result)
 
     @asynccontextmanager
     async def lifespan(server: FastMCP):
@@ -109,21 +178,23 @@ def create_server(
         streamable_http_path=streamable_http_path,
         sse_path=sse_path,
         lifespan=lifespan,
+        auth=auth,
+        token_verifier=token_verifier,
     )
     apply_server_metadata(mcp)
     _register_doc_resources(mcp)
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_TOOL)
     async def last_leaks(
         query: str,
-        days: int = 7,
-        data_type: str = "all",
-        breach_type: str = "all",
-        mask_password: int = 0,
-        limit: int = 500,
-        page: int = 1,
-        sortBy: str = "index_date",
-    ) -> dict[str, Any]:
+        days: Days = 7,
+        data_type: SourceType = "all",
+        breach_type: BreachType = "all",
+        mask_password: BinaryInt = 0,
+        limit: Limit5000 = 500,
+        page: PositiveInt = 1,
+        sort_by: Literal["index_date", "log_date"] = "index_date",
+    ) -> WhiteIntelResponse:
         """Get the most recent credential exposures for a target domain."""
         return await call(
             "last_leaks",
@@ -136,24 +207,24 @@ def create_server(
                 mask_password=mask_password,
                 limit=limit,
                 page=page,
-                sortBy=sortBy,
+                sortBy=sort_by,
             ),
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_TOOL)
     async def threat_feed(
-        mode: str | None = None,
+        mode: ThreatFeedMode | None = None,
         search: str | None = None,
         category: str | list[str] | None = None,
         industry: str | list[str] | None = None,
         network: str | list[str] | None = None,
-        taxonomy: str | None = None,
+        taxonomy: ThreatFeedTaxonomy | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
-        limit: int = 100,
-        page: int = 1,
-    ) -> dict[str, Any]:
-        """Query the WhiteIntel threat intelligence feed."""
+        limit: Limit100 = 100,
+        page: PositiveInt = 1,
+    ) -> WhiteIntelResponse:
+        """Query the WhiteIntel threat feed; requires the Threat Feed entitlement."""
         return await call(
             "threat_feed",
             ThreatFeedRequest(
@@ -171,20 +242,20 @@ def create_server(
             ),
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_TOOL)
     async def threat_feed_darkweb_chatters(
-        mode: str | None = None,
+        mode: ThreatFeedMode | None = None,
         search: str | None = None,
         category: str | list[str] | None = None,
         industry: str | list[str] | None = None,
         network: str | list[str] | None = None,
-        taxonomy: str | None = None,
+        taxonomy: ThreatFeedTaxonomy | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
-        limit: int = 100,
-        page: int = 1,
-    ) -> dict[str, Any]:
-        """Query the Threat Feed Darkweb Chatters add-on."""
+        limit: Limit100 = 100,
+        page: PositiveInt = 1,
+    ) -> WhiteIntelResponse:
+        """Query Darkweb Chatters; requires its dedicated Threat Feed add-on."""
         return await call(
             "threat_feed_darkweb_chatters",
             DarkwebChattersRequest(
@@ -202,19 +273,19 @@ def create_server(
             ),
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_TOOL)
     async def consumer_leaks(
         query: str,
-        type: str = "all",
-        include_system_info: int = 0,
-        mask_password: int = 0,
-        limit: int = 500,
-        page: int = 1,
+        type: SourceType = "all",
+        include_system_info: BinaryInt = 0,
+        mask_password: BinaryInt = 0,
+        limit: Limit5000 = 500,
+        page: PositiveInt = 1,
         start_date: str | None = None,
         end_date: str | None = None,
         username: str | None = None,
         subdomain: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> WhiteIntelResponse:
         """Get consumer-side credentials leaked from infostealers and combolists."""
         return await call(
             "consumer_leaks",
@@ -233,17 +304,17 @@ def create_server(
             ),
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_TOOL)
     async def corporate_leaks(
         query: str,
-        type: str = "all",
-        include_system_info: int = 0,
-        mask_password: int = 0,
-        limit: int = 500,
-        page: int = 1,
+        type: SourceType = "all",
+        include_system_info: BinaryInt = 0,
+        mask_password: BinaryInt = 0,
+        limit: Limit5000 = 500,
+        page: PositiveInt = 1,
         start_date: str | None = None,
         end_date: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> WhiteIntelResponse:
         """Get corporate credentials belonging to an organization."""
         return await call(
             "corporate_leaks",
@@ -260,14 +331,14 @@ def create_server(
             ),
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_TOOL)
     async def database_leaks(
         query: str,
-        limit: int = 500,
-        page: int = 1,
+        limit: Limit5000 = 500,
+        page: PositiveInt = 1,
         start_date: str | None = None,
         end_date: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> WhiteIntelResponse:
         """Get corporate credentials exposed in third-party database breaches."""
         return await call(
             "database_leaks",
@@ -281,24 +352,24 @@ def create_server(
             ),
         )
 
-    @mcp.tool()
-    async def overall_stats(query: str, metric: str) -> dict[str, Any]:
+    @mcp.tool(annotations=READ_ONLY_TOOL)
+    async def overall_stats(query: str, metric: OverallMetric) -> WhiteIntelResponse:
         """Get aggregate intelligence metrics for a target domain."""
         return await call(
             "overall_stats",
             OverallStatsRequest(apikey="", query=query, metric=metric),
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_TOOL)
     async def ip_leaks(
         query: str,
-        mask_password: int = 0,
-        limit: int = 500,
-        page: int = 1,
+        mask_password: BinaryInt = 0,
+        limit: Limit5000 = 500,
+        page: PositiveInt = 1,
         start_date: str | None = None,
         end_date: str | None = None,
-    ) -> dict[str, Any]:
-        """Get infostealer credential records for a specific IP address."""
+    ) -> WhiteIntelResponse:
+        """Get IP-linked infostealer records; requires a Threat Intelligence license."""
         return await call(
             "ip_leaks",
             IPLeaksRequest(
@@ -312,15 +383,15 @@ def create_server(
             ),
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_TOOL)
     async def computer_leaks(
         query: str,
-        mask_password: int = 0,
-        limit: int = 500,
-        page: int = 1,
+        mask_password: BinaryInt = 0,
+        limit: Limit5000 = 500,
+        page: PositiveInt = 1,
         start_date: str | None = None,
         end_date: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> WhiteIntelResponse:
         """Get infostealer credential records for a specific computer hostname."""
         return await call(
             "computer_leaks",
@@ -335,17 +406,17 @@ def create_server(
             ),
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_TOOL)
     async def username_leaks(
         query: str,
-        type: str = "all",
-        include_system_info: int = 0,
-        mask_password: int = 0,
-        limit: int = 500,
-        page: int = 1,
+        type: SourceType = "all",
+        include_system_info: BinaryInt = 0,
+        mask_password: BinaryInt = 0,
+        limit: Limit5000 = 500,
+        page: PositiveInt = 1,
         start_date: str | None = None,
         end_date: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> WhiteIntelResponse:
         """Get credential records for a specific username or email address."""
         return await call(
             "username_leaks",
@@ -362,38 +433,36 @@ def create_server(
             ),
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_TOOL)
     async def lookalike_domains(
         query: str | None = None,
-        limit: int = 500,
-        page: int = 1,
-    ) -> dict[str, Any]:
+        limit: Limit5000 = 500,
+        page: PositiveInt = 1,
+    ) -> WhiteIntelResponse:
         """Get typosquatting and brand-impersonation domains."""
         return await call(
             "lookalike_domains",
             LookalikeDomainsRequest(apikey="", query=query, limit=limit, page=page),
         )
 
-    @mcp.tool()
-    async def leaks_by_id(query: str, mask_password: int = 0) -> dict[str, Any]:
-        """Get full stealer infection records by log ID or up to 5 comma-separated IDs."""
-        parsed: int | list[int]
-        if "," in query:
-            parsed = [int(item.strip()) for item in query.split(",") if item.strip()]
-        else:
-            parsed = int(query)
+    @mcp.tool(annotations=READ_ONLY_TOOL)
+    async def leaks_by_id(
+        query: int | list[int],
+        mask_password: BinaryInt = 0,
+    ) -> WhiteIntelResponse:
+        """Get full stealer infection records by one ID or an array of up to 5 IDs."""
         return await call(
             "leaks_by_id",
-            LeaksByIDRequest(apikey="", query=parsed, mask_password=mask_password),
+            LeaksByIDRequest(apikey="", query=query, mask_password=mask_password),
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_TOOL)
     async def watchlist_list(
-        kind: str | None = None,
-        status: str | None = None,
-        page: int = 1,
-        limit: int = 50,
-    ) -> dict[str, Any]:
+        kind: WatchlistEntryType | None = None,
+        status: WatchlistStatus | None = None,
+        page: PositiveInt = 1,
+        limit: Limit100 = 50,
+    ) -> WhiteIntelResponse:
         """List watchlist entries."""
         return await call(
             "watchlist_manage",
@@ -407,19 +476,19 @@ def create_server(
             ),
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=MUTATING_TOOL)
     async def watchlist_add(
-        entry_type: str,
+        entry_type: WatchlistEntryType,
         entry: str,
         notify_email: str | None = None,
-        push_to_slack: int = 0,
-        push_to_jira: int = 0,
-        include_usernames: int = 0,
-        include_passwords: int = 0,
-        consumer_alerts: int = 0,
-        corporate_alerts: int = 0,
-    ) -> dict[str, Any]:
-        """Add a watchlist entry."""
+        push_to_slack: bool = False,
+        push_to_jira: bool = False,
+        include_usernames: bool = False,
+        include_passwords: bool = False,
+        consumer_alerts: bool = False,
+        corporate_alerts: bool = False,
+    ) -> WhiteIntelResponse:
+        """Add a persistent WhiteIntel watchlist entry and notification settings."""
         return await call(
             "watchlist_manage",
             WatchlistManageRequest(
@@ -428,49 +497,49 @@ def create_server(
                 entry_type=entry_type,
                 entry=entry,
                 notify_email=notify_email,
-                push_to_slack=push_to_slack,
-                push_to_jira=push_to_jira,
-                include_usernames=include_usernames,
-                include_passwords=include_passwords,
-                consumer_alerts=consumer_alerts,
-                corporate_alerts=corporate_alerts,
+                push_to_slack=int(push_to_slack),
+                push_to_jira=int(push_to_jira),
+                include_usernames=int(include_usernames),
+                include_passwords=int(include_passwords),
+                consumer_alerts=int(consumer_alerts),
+                corporate_alerts=int(corporate_alerts),
             ),
         )
 
-    @mcp.tool()
-    async def watchlist_remove(id: int) -> dict[str, Any]:
-        """Remove a watchlist entry."""
+    @mcp.tool(annotations=DESTRUCTIVE_TOOL)
+    async def watchlist_remove(id: PositiveInt) -> WhiteIntelResponse:
+        """Permanently remove a WhiteIntel watchlist entry."""
         return await call(
             "watchlist_manage",
             WatchlistManageRequest(apikey="", action="remove", id=id),
         )
 
-    @mcp.tool()
-    async def watchlist_enable(id: int) -> dict[str, Any]:
+    @mcp.tool(annotations=IDEMPOTENT_MUTATION_TOOL)
+    async def watchlist_enable(id: PositiveInt) -> WhiteIntelResponse:
         """Enable a watchlist entry."""
         return await call(
             "watchlist_manage",
             WatchlistManageRequest(apikey="", action="enable", id=id),
         )
 
-    @mcp.tool()
-    async def watchlist_disable(id: int) -> dict[str, Any]:
+    @mcp.tool(annotations=IDEMPOTENT_MUTATION_TOOL)
+    async def watchlist_disable(id: PositiveInt) -> WhiteIntelResponse:
         """Disable a watchlist entry."""
         return await call(
             "watchlist_manage",
             WatchlistManageRequest(apikey="", action="disable", id=id),
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_TOOL)
     async def supplier_list(
-        status: str = "active",
-        tier: str | None = None,
+        status: SupplierStatus = "active",
+        tier: SupplierTier | None = None,
         search: str | None = None,
-        sort: str = "score",
-        order: str = "desc",
-        limit: int = 50,
-        offset: int = 0,
-    ) -> dict[str, Any]:
+        sort: SupplierSort = "score",
+        order: SortOrder = "desc",
+        limit: Limit200 = 50,
+        offset: NonNegativeInt = 0,
+    ) -> WhiteIntelResponse:
         """List Supplier Security suppliers."""
         return await call(
             "supplier",
@@ -487,7 +556,7 @@ def create_server(
             ),
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=MUTATING_TOOL)
     async def supplier_add(
         domain: str,
         display_name: str | None = None,
@@ -495,10 +564,10 @@ def create_server(
         country: str | None = None,
         industry: str | None = None,
         category: str | None = None,
-        supplier_tier: str | None = None,
+        supplier_tier: SupplierTier | None = None,
         notes: str | None = None,
-    ) -> dict[str, Any]:
-        """Add a Supplier Security supplier."""
+    ) -> WhiteIntelResponse:
+        """Add a persistent supplier to WhiteIntel Supplier Security."""
         return await call(
             "supplier",
             SupplierRequest(
@@ -515,43 +584,49 @@ def create_server(
             ),
         )
 
-    @mcp.tool()
-    async def supplier_remove(id: int | None = None, domain: str | None = None) -> dict[str, Any]:
-        """Remove a Supplier Security supplier."""
+    @mcp.tool(annotations=DESTRUCTIVE_TOOL)
+    async def supplier_remove(
+        id: PositiveInt | None = None,
+        domain: str | None = None,
+    ) -> WhiteIntelResponse:
+        """Remove a supplier from active WhiteIntel Supplier Security tracking."""
         return await call(
             "supplier",
             SupplierRequest(apikey="", action="remove", id=id, domain=domain),
         )
 
-    @mcp.tool()
-    async def supplier_delete(id: int | None = None, domain: str | None = None) -> dict[str, Any]:
-        """Delete a Supplier Security supplier."""
+    @mcp.tool(annotations=DESTRUCTIVE_TOOL)
+    async def supplier_delete(
+        id: PositiveInt | None = None,
+        domain: str | None = None,
+    ) -> WhiteIntelResponse:
+        """Permanently delete a WhiteIntel Supplier Security supplier."""
         return await call(
             "supplier",
             SupplierRequest(apikey="", action="delete", id=id, domain=domain),
         )
 
-    @mcp.tool()
-    async def audit_logs(page: int = 1) -> dict[str, Any]:
+    @mcp.tool(annotations=READ_ONLY_TOOL)
+    async def audit_logs(page: PositiveInt = 1) -> WhiteIntelResponse:
         """Get paginated audit logs for the configured API key."""
         return await call("audit_logs", AuditLogsRequest(apikey="", page=page))
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY_TOOL)
     async def card_check(
-        bin: str | None = None,
+        bin: CardBin | None = None,
         issuer: str | None = None,
-        country: str | None = None,
-        networks: str | None = None,
-        types: str | None = None,
-        brands: str | None = None,
-        valid_only: int = 0,
+        country: CountryCode | None = None,
+        networks: list[str] | None = None,
+        types: list[Literal["credit", "debit"]] | None = None,
+        brands: list[str] | None = None,
+        valid_only: bool = False,
         exposed_after: str | None = None,
         exposed_before: str | None = None,
-        sort_by: str = "exposed_date",
-        sort_dir: str = "desc",
-        page: int = 1,
-    ) -> dict[str, Any]:
-        """Query compromised payment card records."""
+        sort_by: CardCheckSortBy = "exposed_date",
+        sort_dir: CardCheckSortDir = "desc",
+        page: PositiveInt = 1,
+    ) -> WhiteIntelResponse:
+        """Query compromised card records; requires Payment Fraud access."""
         return await call(
             "card_check",
             CardCheckRequest(
@@ -559,10 +634,10 @@ def create_server(
                 bin=bin,
                 issuer=issuer,
                 country=country,
-                networks=_csv(networks),
-                types=_csv(types),
-                brands=_csv(brands),
-                valid_only=valid_only,
+                networks=networks,
+                types=types,
+                brands=brands,
+                valid_only=int(valid_only),
                 exposed_after=exposed_after,
                 exposed_before=exposed_before,
                 sort_by=sort_by,
@@ -571,6 +646,7 @@ def create_server(
             ),
         )
 
+    policy.apply(mcp)
     return mcp
 
 
@@ -589,6 +665,16 @@ def main() -> None:
     parser.add_argument("--sse-path", default=os.getenv("WHITEINTEL_MCP_SSE_PATH", "/sse"))
     parser.add_argument("--mount-path", default=os.getenv("WHITEINTEL_MCP_MOUNT_PATH", None))
     args = parser.parse_args()
+
+    if (
+        args.transport != "stdio"
+        and not _is_loopback_host(args.host)
+        and not env_flag("WHITEINTEL_MCP_ALLOW_INSECURE_REMOTE")
+    ):
+        parser.error(
+            "Remote HTTP/SSE binding requires MCP OAuth or a trusted authenticating proxy. "
+            "Set WHITEINTEL_MCP_ALLOW_INSECURE_REMOTE=true only when that protection is external."
+        )
 
     create_server(
         host=args.host,

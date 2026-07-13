@@ -32,6 +32,7 @@ _ENDPOINT_PATHS: dict[str, str] = {
 
 _DEFAULT_BASE_URL = "https://api.whiteintel.io"
 _DEFAULT_TIMEOUT = 30.0
+MAX_RETRY_AFTER_SECONDS = 30.0
 
 
 class WhiteIntelClient:
@@ -82,9 +83,12 @@ class WhiteIntelClient:
 
         if result.get("http_status") == 429 and result.get("retry_after") is not None:
             try:
-                await asyncio.sleep(float(result["retry_after"]))
+                retry_after = float(result["retry_after"])
             except (TypeError, ValueError):
                 return result
+            if retry_after < 0:
+                return result
+            await asyncio.sleep(min(retry_after, MAX_RETRY_AFTER_SECONDS))
             result = await self._post(path, body)
 
         return result
