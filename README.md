@@ -1,6 +1,6 @@
 <h1 align="center">WhiteIntel-MCP</h1>
 
-<p align="center">基于 <code>FastMCP</code> 编写的 WhiteIntel 威胁情报 MCP Server，覆盖凭证泄露、暗网情报、近似域名、监控列表、供应商安全和审计日志</p>
+<p align="center">基于 <code>FastMCP</code> 编写的 WhiteIntel 威胁情报 MCP Server，覆盖凭证泄露、暗网情报、近似域名等查询能力</p>
 
 <p align="center">
   <img src="https://img.shields.io/pypi/v/whiteintel-mcp?label=PyPI&color=3775A9" alt="PyPI 版本"/>
@@ -118,6 +118,12 @@ WHITEINTEL_API_KEY=YOUR_KEY whiteintel-mcp \
   --streamable-http-path /mcp
 ```
 
+HTTP/SSE 默认只允许绑定到 loopback 地址。对外监听时必须在前置代理或嵌入式
+FastMCP Host 中完成认证；仅当认证由可信代理提供时，才可设置
+`WHITEINTEL_MCP_ALLOW_INSECURE_REMOTE=true` 允许 CLI 绑定非 loopback 地址。
+`create_server()` 同时接受 MCP SDK 标准的 `AuthSettings` 和 `TokenVerifier`，用于
+将服务器接入符合 MCP Authorization 规范的 OAuth 2.1 Resource Server。
+
 ## 环境变量
 
 | 环境变量 | 说明 |
@@ -130,12 +136,19 @@ WHITEINTEL_API_KEY=YOUR_KEY whiteintel-mcp \
 | `WHITEINTEL_MCP_HTTP_PATH` | 可选，Streamable HTTP 路径，默认 `/mcp` |
 | `WHITEINTEL_MCP_SSE_PATH` | 可选，SSE 路径，默认 `/sse` |
 | `WHITEINTEL_MCP_MOUNT_PATH` | 可选，挂载路径 |
+| `WHITEINTEL_ENABLED_MODULES` | 可选，逗号分隔的模块 allowlist；未设置或留空时开放全部已配置模块 |
+| `WHITEINTEL_ENABLE_WRITE_TOOLS` | 可选，是否暴露 Watchlist/Supplier 写工具，默认 `false` |
+| `WHITEINTEL_MCP_ALLOW_INSECURE_REMOTE` | 仅可信认证代理场景使用；允许 CLI 绑定非 loopback HTTP/SSE 地址 |
 
 API Key 获取入口：`https://whiteintel.io`
 
 `mcp.json.example` 和 `.env.example` 提供了可直接修改的示例。
 
 ## 工具列表
+
+默认仅暴露只读工具。写工具需要显式设置
+`WHITEINTEL_ENABLE_WRITE_TOOLS=true`；该开关只控制工具暴露范围，HTTP 部署仍须在
+服务端按调用者身份和 scope 授权。
 
 | 工具名称 | 模块 | 说明 |
 | --- | --- | --- |
@@ -151,18 +164,39 @@ API Key 获取入口：`https://whiteintel.io`
 | `lookalike_domains` | Brand Protection | 查询近似域名和品牌仿冒域名 |
 | `leaks_by_id` | Entity Lookup | 按单个或最多 5 个日志 ID 查询完整记录 |
 | `watchlist_list` | Watchlist | 查询监控列表条目 |
-| `watchlist_add` | Watchlist | 添加监控列表条目 |
-| `watchlist_remove` | Watchlist | 移除监控列表条目 |
-| `watchlist_enable` | Watchlist | 启用监控列表条目 |
-| `watchlist_disable` | Watchlist | 禁用监控列表条目 |
+| `watchlist_add` | Watchlist | 添加监控列表条目（需启用写工具） |
+| `watchlist_remove` | Watchlist | 移除监控列表条目（需启用写工具） |
+| `watchlist_enable` | Watchlist | 启用监控列表条目（需启用写工具） |
+| `watchlist_disable` | Watchlist | 禁用监控列表条目（需启用写工具） |
 | `supplier_list` | Supplier Security | 查询供应商安全条目 |
-| `supplier_add` | Supplier Security | 添加供应商安全条目 |
-| `supplier_remove` | Supplier Security | 移除供应商安全条目 |
-| `supplier_delete` | Supplier Security | 删除供应商安全条目 |
+| `supplier_add` | Supplier Security | 添加供应商安全条目（需启用写工具） |
+| `supplier_remove` | Supplier Security | 移除供应商安全条目（需启用写工具） |
+| `supplier_delete` | Supplier Security | 删除供应商安全条目（需启用写工具） |
 | `audit_logs` | Audit | 查询 API Key 调用审计日志 |
 | `card_check` | Payment Fraud | 查询 compromised payment card 记录 |
 
 工具返回 WhiteIntel 上游结构化 JSON：成功时通常包含 `success=true`、结果字段和剩余额度字段；失败时保留上游返回的 `error`、`message`、`http_status` 或限流信息，便于 MCP 客户端区分鉴权错误、套餐权限不足、额度耗尽、限流、超时和参数校验失败。
+
+失败响应会转换为 MCP Tool Execution Error（`isError=true`），并提供稳定错误码：
+`AUTH_INVALID`、`ENTITLEMENT_REQUIRED`、`QUOTA_EXHAUSTED`、`RATE_LIMITED`、
+`INVALID_REQUEST`、`FORBIDDEN`、`UPSTREAM_UNAVAILABLE` 或 `UPSTREAM_ERROR`。
+
+工具使用 MCP Tool Annotations 标识只读、写入和破坏性操作。公共参数使用枚举、
+范围、数组和布尔类型；上游的 `sortBy`、逗号分隔列表和 `0/1` 布尔约定不会直接
+泄漏到对应的新工具参数中。
+
+### 按套餐限制工具范围
+
+WhiteIntel 当前没有稳定的账号 capability 查询接口，因此本项目不通过逐接口试探
+来猜测权限，也不会把额度耗尽误判为永久无权限。部署者应根据账号套餐显式配置模块：
+
+```bash
+WHITEINTEL_ENABLED_MODULES=credential_exposure,entity_lookup,analytics \
+  whiteintel-mcp
+```
+
+支持的模块为：`credential_exposure`、`entity_lookup`、`threat_feed`、`analytics`、
+`brand_protection`、`watchlist`、`supplier_security`、`audit`、`payment_fraud`。
 
 ## 资源提示
 

@@ -1,6 +1,6 @@
 [project]
 name = "whiteintel-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "WhiteIntel-MCP FastMCP server for credential exposure, threat feed, watchlist, and supplier intelligence APIs"
 readme = "README.md"
 requires-python = ">=3.10"
