@@ -6,7 +6,7 @@ import json
 from enum import Enum
 from typing import Any
 
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError
 
 
 class ToolErrorCode(str, Enum):
@@ -64,7 +64,7 @@ def classify_error(result: dict[str, Any]) -> ToolErrorCode:
 
 
 def to_tool_error(result: dict[str, Any]) -> ToolError:
-    """Build a machine-readable error that FastMCP emits with ``isError=true``."""
+    """Build a machine-readable error that MCPServer emits with ``is_error=true``."""
     code = classify_error(result)
     payload: dict[str, Any] = {
         "code": code.value,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 
 TOOL_MODULES: dict[str, str] = {
@@ -93,7 +93,7 @@ class ToolPolicy:
             return False
         return self.enable_write_tools or tool_name not in WRITE_TOOLS
 
-    def apply(self, server: FastMCP) -> None:
+    def apply(self, server: MCPServer) -> None:
         for tool_name in TOOL_MODULES:
             if not self.allows(tool_name):
                 server.remove_tool(tool_name)

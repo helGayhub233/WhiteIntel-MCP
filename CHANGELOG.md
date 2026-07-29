@@ -4,6 +4,23 @@ All notable changes to WhiteIntel-MCP will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-29
+
+### Added
+
+- Added a JSON Schema 2020-12 `oneOf` contract requiring exactly one of `bin`, `issuer`, or `country` for `card_check`.
+
+### Changed
+
+- Reworked all public tool titles, descriptions, and parameter schemas for TDQS clarity, sibling-tool differentiation, and behavioral transparency.
+- Exposed the shared `0.2 QPS` per-endpoint, per-key request pacing in every tool description.
+- Updated the README compatibility badge to MCP SDK 2.0.0.
+- Removed stale test-only project configuration from the release package.
+- Migrated from FastMCP v1 to the official MCP Python SDK 2.0.0 `MCPServer` API.
+- Added dual-era support for MCP `2026-07-28` and legacy `2025-11-25` clients.
+- Moved HTTP/SSE transport options from the server constructor to `run()` and removed the unsupported `mount_path` CLI option.
+- Added the `httpx[socks]` extra so startup works in SOCKS proxy environments.
+
 ## [0.2.0] - 2026-07-13
 
 ### Added
