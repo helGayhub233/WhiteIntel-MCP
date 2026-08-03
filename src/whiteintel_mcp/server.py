@@ -125,8 +125,9 @@ OptionalCardBin = Annotated[
 ]
 
 WHITEINTEL_RATE_DISCLOSURE = (
-    " Requires WHITEINTEL_API_KEY; requests are paced at 0.2 QPS per endpoint "
-    "and API key before provider-directed cooldowns are applied."
+    " Requires WHITEINTEL_API_KEY; requests use conservative local pacing per "
+    "upstream route and API key (default 0.2 QPS, configurable with "
+    "WHITEINTEL_UPSTREAM_QPS) before provider-directed cooldowns are applied."
 )
 
 
@@ -176,15 +177,6 @@ class WhiteIntelMCPServer(MCPServer):
         return exposed_tools
 
 
-OptionalCountryCode = Annotated[
-    str | None,
-    Field(
-        min_length=2,
-        max_length=2,
-        pattern=r"^[A-Z]{2}$",
-        description="Optional uppercase ISO 3166-1 alpha-2 country code, for example US.",
-    ),
-]
 DomainQuery = Annotated[
     str,
     Field(
@@ -235,6 +227,14 @@ StartDate = Annotated[
 EndDate = Annotated[
     str | None,
     Field(description="Inclusive UTC end date in YYYY-MM-DD format; provide start_date with it."),
+]
+IndependentStartDate = Annotated[
+    str | None,
+    Field(description="Optional inclusive UTC start date in YYYY-MM-DD format."),
+]
+IndependentEndDate = Annotated[
+    str | None,
+    Field(description="Optional inclusive UTC end date in YYYY-MM-DD format."),
 ]
 UsernameFilter = Annotated[
     str | None,
@@ -340,17 +340,45 @@ SupplierTierValue = Annotated[
     SupplierTier | None,
     Field(description="Optional supplier criticality tier."),
 ]
-OptionalCardText = Annotated[
+OptionalCardIssuer = Annotated[
     str | None,
-    Field(description="Optional case-insensitive card attribute filter."),
+    Field(
+        min_length=3,
+        max_length=100,
+        description="Optional case-insensitive partial issuing-institution name.",
+    ),
+]
+OptionalCardCountry = Annotated[
+    str | None,
+    Field(
+        min_length=2,
+        max_length=100,
+        description="Optional ISO alpha-2 country code or partial country name.",
+    ),
 ]
 OptionalStringList = Annotated[
     list[str] | None,
-    Field(description="Optional list of accepted values for the named card attribute."),
+    Field(
+        min_length=1,
+        max_length=10,
+        description="Optional list of up to 10 accepted card-attribute values.",
+    ),
 ]
 CardTypes = Annotated[
     list[Literal["credit", "debit"]] | None,
-    Field(description="Optional card funding types: credit, debit, or both."),
+    Field(
+        min_length=1,
+        max_length=10,
+        description="Optional card funding types: credit, debit, or both.",
+    ),
+]
+CardCountries = Annotated[
+    list[str] | None,
+    Field(
+        min_length=1,
+        max_length=20,
+        description="Optional uppercase ISO alpha-2 issuing-country filters.",
+    ),
 ]
 CardDate = Annotated[
     str | None,
@@ -410,7 +438,7 @@ def create_server(
 ) -> MCPServer:
     """Build and return the configured MCP server instance."""
 
-    client = WhiteIntelClient(rate_limiter=UpstreamRateLimiter())
+    client = WhiteIntelClient(rate_limiter=UpstreamRateLimiter.from_environment())
 
     if (auth is None) != (token_verifier is None):
         raise ValueError("auth and token_verifier must be provided together.")
@@ -497,8 +525,8 @@ def create_server(
         industry: IndustryFilter = None,
         network: NetworkFilter = None,
         taxonomy: TaxonomyMode = None,
-        start_date: StartDate = None,
-        end_date: EndDate = None,
+        start_date: IndependentStartDate = None,
+        end_date: IndependentEndDate = None,
         limit: Limit100 = 100,
         page: PositiveInt = 1,
     ) -> WhiteIntelResponse:
@@ -537,8 +565,8 @@ def create_server(
         industry: IndustryFilter = None,
         network: NetworkFilter = None,
         taxonomy: TaxonomyMode = None,
-        start_date: StartDate = None,
-        end_date: EndDate = None,
+        start_date: IndependentStartDate = None,
+        end_date: IndependentEndDate = None,
         limit: Limit100 = 100,
         page: PositiveInt = 1,
     ) -> WhiteIntelResponse:
@@ -669,8 +697,9 @@ def create_server(
         title="Domain Intelligence Metrics",
         description=(
             "Compute one aggregate WhiteIntel exposure metric for a target domain. "
-            "Use the leak-search tools when individual records are required. This "
-            "read-only request returns an aggregate and consumes daily quota."
+            "Use last_leaks for recent records, or consumer_leaks and corporate_leaks "
+            "for source records instead of aggregates. This read-only request returns "
+            "one aggregate and consumes daily quota."
         ),
         annotations=READ_ONLY_TOOL,
     )
@@ -803,9 +832,9 @@ def create_server(
         title="Leak Records by ID",
         description=(
             "Retrieve full stealer infection records for one known WhiteIntel leak ID "
-            "or up to five IDs. Use a leak-search tool first when record IDs are not "
-            "known. This read-only request can reveal sensitive credential details and "
-            "consumes daily quota."
+            "or up to five IDs. When IDs are unknown, use last_leaks, ip_leaks, "
+            "computer_leaks, or username_leaks first. This read-only request can reveal "
+            "sensitive credential details and consumes daily quota."
         ),
         annotations=READ_ONLY_TOOL,
     )
@@ -1048,7 +1077,7 @@ def create_server(
         title="WhiteIntel Audit Logs",
         description=(
             "Get one page of audit events for the configured WhiteIntel API key. Use "
-            "this to review account activity rather than exposure records. This "
+            "last_leaks or the entity lookup tools for exposure records instead. This "
             "operation is read-only and consumes the configured account quota."
         ),
         annotations=READ_ONLY_TOOL,
@@ -1060,20 +1089,21 @@ def create_server(
         title="Compromised Payment Cards",
         description=(
             "Query compromised payment-card records using issuer, geography, network, "
-            "type, brand, validity, date, and sort filters. Use the credential-leak "
-            "tools for non-card exposures. Provide exactly one selector: bin, issuer, "
-            "or country. This read-only request requires Payment Fraud access and "
-            "consumes its quota."
+            "type, brand, validity, date, and sort filters. Use consumer_leaks or "
+            "corporate_leaks for non-card credentials. Provide exactly one selector: "
+            "bin, issuer, or country. This read-only request requires Payment Fraud "
+            "access and consumes its quota."
         ),
         annotations=READ_ONLY_TOOL,
     )
     async def card_check(
         bin: OptionalCardBin = None,
-        issuer: OptionalCardText = None,
-        country: OptionalCountryCode = None,
+        issuer: OptionalCardIssuer = None,
+        country: OptionalCardCountry = None,
         networks: OptionalStringList = None,
         types: CardTypes = None,
         brands: OptionalStringList = None,
+        countries: CardCountries = None,
         valid_only: ValidOnly = False,
         exposed_after: CardDate = None,
         exposed_before: CardDate = None,
@@ -1092,7 +1122,8 @@ def create_server(
                 networks=networks,
                 types=types,
                 brands=brands,
-                valid_only=int(valid_only),
+                countries=countries,
+                valid_only=valid_only,
                 exposed_after=exposed_after,
                 exposed_before=exposed_before,
                 sort_by=sort_by,

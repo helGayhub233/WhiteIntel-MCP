@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -33,6 +36,37 @@ _ENDPOINT_PATHS: dict[str, str] = {
 _DEFAULT_BASE_URL = "https://api.whiteintel.io"
 _DEFAULT_TIMEOUT = 30.0
 MAX_RETRY_AFTER_SECONDS = 30.0
+DEFAULT_429_RETRY_SECONDS = 5.0
+_WAIT_SECONDS_PATTERN = re.compile(
+    r"(?:wait|retry(?:\s+after)?)\D{0,20}(\d+(?:\.\d+)?)\s*seconds?",
+    re.IGNORECASE,
+)
+
+
+def _retry_delay_seconds(result: dict[str, Any]) -> float:
+    """Resolve Retry-After seconds, including HTTP dates and documented messages."""
+    retry_after = result.get("retry_after")
+    if retry_after is not None:
+        try:
+            return max(0.0, float(retry_after))
+        except (TypeError, ValueError):
+            if isinstance(retry_after, str):
+                try:
+                    retry_at = parsedate_to_datetime(retry_after)
+                    if retry_at.tzinfo is None:
+                        retry_at = retry_at.replace(tzinfo=timezone.utc)
+                    return max(
+                        0.0,
+                        (retry_at - datetime.now(timezone.utc)).total_seconds(),
+                    )
+                except (TypeError, ValueError, OverflowError):
+                    pass
+
+    for key in ("message", "error", "detail"):
+        message = result.get(key)
+        if isinstance(message, str) and (match := _WAIT_SECONDS_PATTERN.search(message)):
+            return max(0.0, float(match.group(1)))
+    return DEFAULT_429_RETRY_SECONDS
 
 
 class WhiteIntelClient:
@@ -78,18 +112,16 @@ class WhiteIntelClient:
                 "error": f"Unknown endpoint: {endpoint}",
             }
 
-        await self._rate_limiter.wait(endpoint, str(body.get("apikey", "")))
+        # Pace by the actual upstream route. Logical MCP tools may share one route.
+        await self._rate_limiter.wait(path, str(body.get("apikey", "")))
         result = await self._post(path, body)
 
-        if result.get("http_status") == 429 and result.get("retry_after") is not None:
-            try:
-                retry_after = float(result["retry_after"])
-            except (TypeError, ValueError):
-                return result
-            if retry_after < 0:
-                return result
+        if result.get("http_status") == 429:
+            retry_after = _retry_delay_seconds(result)
             await asyncio.sleep(min(retry_after, MAX_RETRY_AFTER_SECONDS))
             result = await self._post(path, body)
+            if result.get("http_status") == 429:
+                result.setdefault("retry_after", _retry_delay_seconds(result))
 
         return result
 
@@ -114,12 +146,23 @@ class WhiteIntelClient:
 
         retry_after = response.headers.get("Retry-After")
         try:
-            data: dict[str, Any] = response.json()
+            decoded = response.json()
         except ValueError:
             data = {
                 "success": False,
                 "error": f"Invalid JSON response from upstream (HTTP {response.status_code}).",
             }
+        else:
+            if isinstance(decoded, dict):
+                data = decoded
+            else:
+                data = {
+                    "success": False,
+                    "error": (
+                        "Invalid JSON object from upstream "
+                        f"(HTTP {response.status_code})."
+                    ),
+                }
 
         data["http_status"] = response.status_code
         if retry_after is not None:

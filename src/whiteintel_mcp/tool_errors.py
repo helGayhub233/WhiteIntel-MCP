@@ -31,6 +31,22 @@ _ENTITLEMENT_MARKERS = (
     "not available",
     "only available",
 )
+_AUTH_MARKERS = (
+    "invalid api key",
+    "api key is invalid",
+    "missing api key",
+    "api key is missing",
+)
+_VALIDATION_MARKERS = (
+    "validation",
+    "invalid parameter",
+    "must be",
+    "must use",
+    "cannot be empty",
+    "can not be empty",
+    "provide exactly one",
+    "allowed values",
+)
 
 
 def _message(result: dict[str, Any]) -> str:
@@ -46,7 +62,7 @@ def classify_error(result: dict[str, Any]) -> ToolErrorCode:
     status = result.get("http_status")
     message = _message(result).lower()
 
-    if status == 401 or "invalid api key" in message or "missing api key" in message:
+    if status == 401 or any(marker in message for marker in _AUTH_MARKERS):
         return ToolErrorCode.AUTH_INVALID
     if status == 429 or "too many requests" in message or "rate limit" in message:
         return ToolErrorCode.RATE_LIMITED
@@ -56,7 +72,7 @@ def classify_error(result: dict[str, Any]) -> ToolErrorCode:
         return ToolErrorCode.ENTITLEMENT_REQUIRED
     if status == 403:
         return ToolErrorCode.FORBIDDEN
-    if status == 400 or "validation" in message or "invalid parameter" in message:
+    if status == 400 or any(marker in message for marker in _VALIDATION_MARKERS):
         return ToolErrorCode.INVALID_REQUEST
     if isinstance(status, int) and status >= 500:
         return ToolErrorCode.UPSTREAM_UNAVAILABLE

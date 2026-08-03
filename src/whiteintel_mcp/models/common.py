@@ -80,6 +80,36 @@ class DateRangeMixin(BaseModel):
         return self
 
 
+class IndependentDateBoundsMixin(BaseModel):
+    """Optional ISO date bounds that may be supplied independently."""
+
+    start_date: str | None = Field(
+        default=None,
+        description="Optional inclusive lower bound, format YYYY-MM-DD.",
+    )
+    end_date: str | None = Field(
+        default=None,
+        description="Optional inclusive upper bound, format YYYY-MM-DD.",
+    )
+
+    @field_validator("start_date", "end_date")
+    @classmethod
+    def _date_is_iso(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        try:
+            date.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError("Date must use YYYY-MM-DD format.") from exc
+        return value
+
+    @model_validator(mode="after")
+    def _dates_are_ordered(self):
+        if self.start_date and self.end_date and self.start_date > self.end_date:
+            raise ValueError("start_date must be earlier than or equal to end_date.")
+        return self
+
+
 class PasswordMaskMixin(BaseModel):
     """Control whether plaintext passwords are returned."""
 

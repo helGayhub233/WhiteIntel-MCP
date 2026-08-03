@@ -6,6 +6,7 @@ and constraints match the official WhiteIntel API v2 documentation.
 
 from __future__ import annotations
 
+from datetime import date
 from ipaddress import ip_address
 from typing import Literal
 
@@ -14,6 +15,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from whiteintel_mcp.models.common import (
     ApiKeyMixin,
     DateRangeMixin,
+    IndependentDateBoundsMixin,
     PaginationMixin,
     PasswordMaskMixin,
     SystemInfoMixin,
@@ -101,7 +103,7 @@ class LastLeaksRequest(_LastLeaksBase, NonEmptyQueryMixin):
 # Threat Feed
 # ---------------------------------------------------------------------------
 
-class _ThreatFeedBase(ApiKeyMixin, DateRangeMixin):
+class _ThreatFeedBase(ApiKeyMixin, IndependentDateBoundsMixin):
     pass
 
 
@@ -621,35 +623,44 @@ class CardCheckRequest(ApiKeyMixin):
     )
     issuer: str | None = Field(
         default=None,
-        min_length=1,
-        max_length=128,
+        min_length=3,
+        max_length=100,
         description="Issuing institution name.",
     )
     country: str | None = Field(
         default=None,
         min_length=2,
-        max_length=2,
-        pattern=r"^[A-Z]{2}$",
-        description="ISO 3166-1 alpha-2 country code.",
+        max_length=100,
+        description="ISO alpha-2 country code or partial country name.",
     )
 
     # ── Optional filters ────────────────────────────────────────
     networks: list[str] | None = Field(
         default=None,
+        min_length=1,
+        max_length=10,
         description="Card network filter (e.g. ['VISA', 'MASTERCARD']).",
     )
-    types: list[str] | None = Field(
+    types: list[CardCheckType] | None = Field(
         default=None,
+        min_length=1,
+        max_length=10,
         description="Card type filter (e.g. ['credit', 'debit']).",
     )
     brands: list[str] | None = Field(
         default=None,
+        min_length=1,
+        max_length=10,
         description="Card brand filter.",
     )
-    valid_only: int = Field(
-        default=0,
-        ge=0,
-        le=1,
+    countries: list[str] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=20,
+        description="Additional ISO 3166-1 alpha-2 country filters.",
+    )
+    valid_only: bool = Field(
+        default=False,
         description="Return only cards with valid (non-expired) expiry.",
     )
 
@@ -690,16 +701,50 @@ class CardCheckRequest(ApiKeyMixin):
             )
         return self
 
+    @field_validator("countries")
+    @classmethod
+    def _country_filters_are_iso_codes(
+        cls, value: list[str] | None,
+    ) -> list[str] | None:
+        if value is not None and any(
+            len(item) != 2 or not item.isalpha() or item != item.upper()
+            for item in value
+        ):
+            raise ValueError("countries must contain uppercase ISO alpha-2 codes.")
+        return value
+
+    @field_validator("exposed_after", "exposed_before")
+    @classmethod
+    def _exposure_date_is_iso(cls, value: str | None) -> str | None:
+        if value is not None:
+            try:
+                date.fromisoformat(value)
+            except ValueError as exc:
+                raise ValueError("Exposure dates must use YYYY-MM-DD format.") from exc
+        return value
+
+    @model_validator(mode="after")
+    def _exposure_dates_are_ordered(self):
+        if (
+            self.exposed_after
+            and self.exposed_before
+            and self.exposed_after > self.exposed_before
+        ):
+            raise ValueError(
+                "exposed_after must be earlier than or equal to exposed_before."
+            )
+        return self
+
 
 # ---------------------------------------------------------------------------
 # Threat Feed Darkweb Chatters (add-on)
 # ---------------------------------------------------------------------------
 
-class DarkwebChattersRequest(ApiKeyMixin, DateRangeMixin):
+class DarkwebChattersRequest(ApiKeyMixin, IndependentDateBoundsMixin):
     """Request model for /get_threat_feeds.php (Darkweb Chatters add-on).
 
     Shares the same upstream endpoint as the standard Threat Feed but is
-    governed by a dedicated daily quota (20 calls/day) and 0.2 QPS burst limit.
+    governed by a dedicated entitlement and Threat Feed quota.
     """
 
     limit: int = Field(

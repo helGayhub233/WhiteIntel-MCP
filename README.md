@@ -3,7 +3,7 @@
 <p align="center">将 WhiteIntel 的凭证泄露、暗网情报、品牌保护和支付欺诈能力接入 MCP 客户端</p>
 
 <p align="center">
-  <img src="https://badgen.net/pypi/v/whiteintel-mcp?label=PyPI&color=3775A9&cache=300" alt="PyPI v0.3.0"/>
+  <img src="https://badgen.net/pypi/v/whiteintel-mcp?label=PyPI&color=3775A9&cache=300&version=0.4.0" alt="PyPI v0.4.0"/>
   <img src="https://badgen.net/badge/Python/%3E%3D3.10/3776AB" alt="Python >=3.10"/>
   <img src="https://badgen.net/badge/MCP%20SDK/2.0.0/6F42C1" alt="MCP SDK 2.0.0"/>
   <img src="https://badgen.net/pypi/dm/whiteintel-mcp?label=Downloads&color=2EA44F&cache=86400" alt="PyPI 下载量"/>
@@ -92,6 +92,7 @@ SDK 2.0.0 已移除 `mount_path`。需要挂载到现有 ASGI 应用时，请使
 | --- | --- |
 | `WHITEINTEL_API_KEY` | WhiteIntel API Key。推荐通过 MCP 客户端环境变量注入 |
 | `WHITEINTEL_BASE_URL` | 可选，上游 API 地址，默认 `https://api.whiteintel.io` |
+| `WHITEINTEL_UPSTREAM_QPS` | 可选，进程内保守节流速率，默认 `0.2`；可按账号合同调整 |
 | `WHITEINTEL_MCP_TRANSPORT` | 可选，`stdio`、`sse` 或 `streamable-http`，默认 `stdio` |
 | `WHITEINTEL_MCP_HOST` | 可选，HTTP/SSE 监听地址，默认 `127.0.0.1` |
 | `WHITEINTEL_MCP_PORT` | 可选，HTTP/SSE 监听端口，默认 `8000` |
@@ -169,10 +170,10 @@ WhiteIntel 返回为准。
 
 | 范围 | 控制方式 |
 | --- | --- |
-| 全部 WhiteIntel HTTP 请求 | 进程内节流，按 `(endpoint, apikey)` 控制，默认 `0.2 QPS`（同一接口、同一 API Key 每 5 秒 1 次请求） |
+| 全部 WhiteIntel HTTP 请求 | 进程内保守节流，按 `(实际上游路径, apikey)` 控制，默认 `0.2 QPS`；这是本地安全默认值，不代表所有端点的官方合同速率 |
 | 全部工具 | API Key 从 `WHITEINTEL_API_KEY` 环境变量读取，不暴露为 MCP 工具参数 |
 | 分页类接口 | 本地 schema 限制页码为正整数，并按接口文档限制 `limit` 范围 |
-| 日期范围参数 | 本地校验 `YYYY-MM-DD` 格式，且 `start_date` / `end_date` 必须成对出现 |
+| 日期范围参数 | 本地校验 `YYYY-MM-DD` 格式；泄露检索端点要求成对，Threat Feed 允许独立提供任一边界 |
 | `leaks_by_id` | 本地限制批量 ID 数量不超过 5 个 |
 | `card_check` | 本地限制必须且只能提供一个主选择器：`bin`、`issuer` 或 `country` |
 
@@ -185,11 +186,14 @@ src/
   whiteintel_mcp/
     server.py                    # MCPServer 入口、工具注册、resources 注册
     cli.py                       # CLI 兼容入口
+    tool_errors.py               # 上游错误分类和 MCP ToolError 转换
+    tool_policy.py               # 模块 allowlist 和写工具暴露策略
     models/
       common.py                  # 共享 Pydantic mixin 和字段校验
       endpoints.py               # 各 WhiteIntel endpoint 请求模型
+      responses.py               # 稳定的 MCP 输出包装
     services/
-      whiteintel_client.py       # 上游 HTTP client 和 429 Retry-After 处理
+      whiteintel_client.py       # 上游 HTTP client 和 429 延迟重试处理
       upstream_rate_limiter.py   # 进程内请求节流
 ```
 

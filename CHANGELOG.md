@@ -4,6 +4,19 @@ All notable changes to WhiteIntel-MCP will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-03
+
+### Changed
+
+- Made conservative local upstream pacing configurable with
+  `WHITEINTEL_UPSTREAM_QPS` and keyed it by the actual upstream route.
+- Retried HTTP 429 responses once even when `Retry-After` is absent, using the
+  documented wait message or a bounded five-second fallback.
+- Aligned Threat Feed date bounds and Card Check filters with the current official
+  API documentation.
+- Hardened non-object JSON handling and classification of HTTP-200 validation
+  failures and documented API-key errors.
+
 ## [0.3.0] - 2026-07-29
 
 ### Added
