@@ -85,8 +85,8 @@ Webhook notifications are triggered for the following watchlist match types:
   "description": "As part of WhiteIntel's dark web surveillance, the specified consumer accounts have been found exposed in stolen credentials.",
   "count": 8,
   "usernames": [
-    ["user2@gmail.com", 5],
-    ["user1@gmail.com", 3]
+    ["user2@example.net", 5],
+    ["user1@example.net", 3]
   ],
   "event_date": "2025-04-10 12:00:00",
   "source": "watchlist_monitor"
@@ -98,12 +98,12 @@ Webhook notifications are triggered for the following watchlist match types:
 ```json
 {
   "type": "corporate",
-  "value": "internal.corp.com",
+  "value": "internal.example.com",
   "description": "As part of WhiteIntel's dark web surveillance, the specified corporate accounts have been found exposed in stolen credentials.",
   "count": 5,
   "usernames": [
-    ["ceo@corp.com", 2],
-    ["it@corp.com", 1]
+    ["ceo@example.com", 2],
+    ["it@example.com", 1]
   ],
   "event_date": "2025-04-10 12:00:00",
   "source": "watchlist_monitor"

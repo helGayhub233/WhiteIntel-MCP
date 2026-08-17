@@ -62,7 +62,7 @@ Each call consumes one daily quota credit, regardless of which metric is request
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `apikey` | string | Yes | — | Your Whiteintel API key. |
-| `query` | string | Yes | — | The target domain or subdomain (e.g. `acme.com`). The endpoint will resolve the value to its registrable domain or full subdomain and use that as the lookup key. |
+| `query` | string | Yes | — | The target domain or subdomain (e.g. `example.com`). The endpoint will resolve the value to its registrable domain or full subdomain and use that as the lookup key. |
 | `metric` | string | Yes | — | The metric to compute. See Available Metrics for the full list. |
 
 ### Notes on `query`
@@ -110,7 +110,7 @@ curl -X POST https://api.whiteintel.io/get_overall_stats.php \
   -H "Content-Type: application/json" \
   -d '{
     "apikey": "YOUR_API_KEY",
-    "query": "acme.com",
+    "query": "example.com",
     "metric": "consumer_count"
   }'
 ```
@@ -138,7 +138,7 @@ Every successful response uses the same outer structure:
 {
   "success": true,
   "remaining_daily_calls": 4983,
-  "target_domain": "acme.com",
+  "target_domain": "example.com",
   "results": {
     "combolist_consumer_count": 12450,
     "stealer_consumer_count": 84210
@@ -152,7 +152,7 @@ Every successful response uses the same outer structure:
 {
   "success": true,
   "remaining_daily_calls": 4983,
-  "target_domain": "acme.com",
+  "target_domain": "example.com",
   "results": {
     "stealer_corporate_count": 6841,
     "combolist_corporate_count": 1932
@@ -166,7 +166,7 @@ Every successful response uses the same outer structure:
 {
   "success": true,
   "remaining_daily_calls": 4983,
-  "target_domain": "acme.com",
+  "target_domain": "example.com",
   "results": { "computer_count": 1843 }
 }
 ```
@@ -177,7 +177,7 @@ Every successful response uses the same outer structure:
 {
   "success": true,
   "remaining_daily_calls": 4983,
-  "target_domain": "acme.com",
+  "target_domain": "example.com",
   "results": { "ip_address_count": 1620 }
 }
 ```
@@ -188,7 +188,7 @@ Every successful response uses the same outer structure:
 {
   "success": true,
   "remaining_daily_calls": 4983,
-  "target_domain": "acme.com",
+  "target_domain": "example.com",
   "results": { "application_count": 47 }
 }
 ```
@@ -199,7 +199,7 @@ Every successful response uses the same outer structure:
 {
   "success": true,
   "remaining_daily_calls": 4983,
-  "target_domain": "acme.com",
+  "target_domain": "example.com",
   "results": { "third_party_application_count": 312 }
 }
 ```
@@ -210,11 +210,11 @@ Every successful response uses the same outer structure:
 {
   "success": true,
   "remaining_daily_calls": 4983,
-  "target_domain": "acme.com",
+  "target_domain": "example.com",
   "results": [
-    { "application": "portal.acme.com", "count": 24180 },
-    { "application": "mail.acme.com", "count": 18203 },
-    { "application": "vpn.acme.com", "count": 9412 }
+    { "application": "portal.example.com", "count": 24180 },
+    { "application": "mail.example.com", "count": 18203 },
+    { "application": "vpn.example.com", "count": 9412 }
   ]
 }
 ```
@@ -225,7 +225,7 @@ Every successful response uses the same outer structure:
 {
   "success": true,
   "remaining_daily_calls": 4983,
-  "target_domain": "acme.com",
+  "target_domain": "example.com",
   "results": [
     { "Year": 2024, "Month": 1, "Count": 412, "source": "stealer" },
     { "Year": 2024, "Month": 1, "Count": 88, "source": "combolist" },
@@ -240,10 +240,10 @@ Every successful response uses the same outer structure:
 {
   "success": true,
   "remaining_daily_calls": 4983,
-  "target_domain": "acme.com",
+  "target_domain": "example.com",
   "results": [
-    { "application": "portal.acme.com", "records": 142, "type": "stealer", "date": "2025-11-14" },
-    { "application": "mail.acme.com", "records": 88, "type": "stealer", "date": "2025-11-13" }
+    { "application": "portal.example.com", "records": 142, "type": "stealer", "date": "2025-11-14" },
+    { "application": "mail.example.com", "records": 88, "type": "stealer", "date": "2025-11-13" }
   ]
 }
 ```
@@ -254,7 +254,7 @@ Every successful response uses the same outer structure:
 {
   "success": true,
   "remaining_daily_calls": 4983,
-  "target_domain": "acme.com",
+  "target_domain": "example.com",
   "results": [
     { "country": "United States", "total": 18420 },
     { "country": "Germany", "total": 9201 },
@@ -295,7 +295,7 @@ Every successful response uses the same outer structure:
 - **Quota planning:** A 12-tile dashboard is 12 calls per render. Consider caching results client-side for short windows when the same domain is viewed repeatedly.
 - **Consumer vs. corporate:** Choose the matched pair when building a comparative dashboard.
 - **Timeline range:** Both timeline metrics return data from January 2017 onward.
-- **Subdomain queries:** Submitting a subdomain (e.g. `mail.acme.com`) restricts results to that subdomain. Use the registrable domain for organization-wide views.
+- **Subdomain queries:** Submitting a subdomain (e.g. `mail.example.com`) restricts results to that subdomain. Use the registrable domain for organization-wide views.
 - **Quota monitoring:** Track the `remaining_daily_calls` field after each successful response.
 
 ---

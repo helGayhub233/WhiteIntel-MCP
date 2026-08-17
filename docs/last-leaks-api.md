@@ -82,7 +82,7 @@ Setting either filter to `all` removes that dimension from the filter. Using `da
 
 ### Notes on `query`
 
-Supply either a registrable domain (e.g. `acme.com`) or a specific subdomain (e.g. `mail.acme.com`). The endpoint will route the lookup automatically.
+Supply either a registrable domain (e.g. `example.com`) or a specific subdomain (e.g. `mail.example.com`). The endpoint will route the lookup automatically.
 
 ### System Information
 
@@ -97,7 +97,7 @@ curl -X POST https://api.whiteintel.io/get_last_leaks.php \
   -H "Content-Type: application/json" \
   -d '{
     "apikey": "YOUR_API_KEY",
-    "query": "acme.com",
+    "query": "example.com",
     "days": 7,
     "data_type": "all",
     "breach_type": "all",
@@ -146,9 +146,9 @@ curl -X POST https://api.whiteintel.io/get_last_leaks.php \
     {
       "data_type": "stealer",
       "breach_type": "consumer",
-      "url": "https://portal.acme.com/login",
+      "url": "https://portal.example.com/login",
       "log_id": 184729302,
-      "username": "customer@acme.com",
+      "username": "customer@example.com",
       "password": "REDACTED_FOR_DOC",
       "log_date": "2025-11-14 08:23:11",
       "hostname": "DESKTOP-K91PQ",
@@ -159,12 +159,12 @@ curl -X POST https://api.whiteintel.io/get_last_leaks.php \
     {
       "data_type": "stealer",
       "breach_type": "corporate",
-      "url": "https://login.microsoftonline.com",
+      "url": "https://login.example.net",
       "log_id": 184729188,
-      "username": "j.smith@acme.com",
+      "username": "j.smith@example.com",
       "password": "REDACTED_FOR_DOC",
       "log_date": "2025-11-13 16:02:44",
-      "hostname": "ACME-LAPTOP-219",
+      "hostname": "EXAMPLE-HOST-001",
       "ip": "198.51.100.12",
       "malware_path": "C:\\Users\\jsmith\\Downloads\\setup.exe",
       "anti_virus": "CrowdStrike Falcon"
@@ -172,8 +172,8 @@ curl -X POST https://api.whiteintel.io/get_last_leaks.php \
     {
       "data_type": "combolist",
       "breach_type": "corporate",
-      "url": "https://accounts.google.com",
-      "username": "m.fields@acme.com",
+      "url": "https://accounts.example.org",
+      "username": "m.fields@example.com",
       "password": "REDACTED_FOR_DOC",
       "log_date": "2025-11-12 09:41:00"
     }

@@ -177,18 +177,18 @@ IDs that return no device information and no credentials are omitted from the re
     },
     "compromised_credentials": [
       {
-        "url": "https://login.microsoftonline.com",
-        "username": "j.smith@acme.com",
+        "url": "https://login.example.net",
+        "username": "j.smith@example.com",
         "password": "REDACTED_FOR_DOC"
       },
       {
-        "url": "https://accounts.google.com",
-        "username": "jsmith.personal@gmail.com",
+        "url": "https://accounts.example.org",
+        "username": "jsmith.personal@example.net",
         "password": "REDACTED_FOR_DOC"
       },
       {
-        "url": "https://github.com/login",
-        "username": "jsmith-acme",
+        "url": "https://code.example.net/login",
+        "username": "sample-user",
         "password": "REDACTED_FOR_DOC"
       }
     ]
@@ -215,15 +215,15 @@ IDs that return no device information and no credentials are omitted from the re
       },
       "compromised_credentials": [
         {
-          "url": "https://login.microsoftonline.com",
-          "username": "j.smith@acme.com",
+          "url": "https://login.example.net",
+          "username": "j.smith@example.com",
           "password": "REDACTED_FOR_DOC"
         }
       ]
     },
     "184729303": {
       "compromised_device_information": {
-        "hostname": "ACME-LAPTOP-219",
+        "hostname": "EXAMPLE-HOST-001",
         "username": "mfields",
         "ip": "198.51.100.12",
         "malware_path": "C:\\Users\\mfields\\Downloads\\setup.exe",
@@ -233,8 +233,8 @@ IDs that return no device information and no credentials are omitted from the re
       },
       "compromised_credentials": [
         {
-          "url": "https://accounts.google.com",
-          "username": "m.fields@acme.com",
+          "url": "https://accounts.example.org",
+          "username": "m.fields@example.com",
           "password": "REDACTED_FOR_DOC"
         }
       ]

@@ -71,7 +71,7 @@ Pass multiple domains using positional arguments:
 
 ```bash
 python threat-intel-monitor/scripts/query_last_weak_single.py \
-  example.com test.com \
+  example.com example.net \
   --query-time 3
 ```
 

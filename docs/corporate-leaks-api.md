@@ -61,7 +61,7 @@ Once the daily quota is exhausted, requests return `403 Forbidden` with a quota-
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `apikey` | string | Yes | — | Your Whiteintel API key. |
-| `query` | string | Yes | — | The target corporate domain (e.g. `acme.com`). The endpoint will return credentials whose username is associated with this domain. |
+| `query` | string | Yes | — | The target corporate domain (e.g. `example.com`). The endpoint will return credentials whose username is associated with this domain. |
 | `type` | string | No | `all` | Result source type. One of `all`, `stealer`, `combolist`. |
 | `include_system_info` | integer | No | `0` | When set to `1`, stealer records include host-level system information. |
 | `mask_password` | integer | No | `0` | When set to `1`, the `password` field is omitted from results. |
@@ -72,7 +72,7 @@ Once the daily quota is exhausted, requests return `403 Forbidden` with a quota-
 
 ### Notes on `query`
 
-Supply the registrable corporate domain (for example `acme.com`). The endpoint will return all leaked credentials whose username belongs to that domain across every site where the credential was captured. Subdomains are not used as a query input for this endpoint, as matching is performed against the email domain of the username rather than the host where the credential was stolen.
+Supply the registrable corporate domain (for example `example.com`). The endpoint will return all leaked credentials whose username belongs to that domain across every site where the credential was captured. Subdomains are not used as a query input for this endpoint, as matching is performed against the email domain of the username rather than the host where the credential was stolen.
 
 ### Notes on date filters
 
@@ -87,7 +87,7 @@ curl -X POST https://api.whiteintel.io/get_corporate_leaks.php \
   -H "Content-Type: application/json" \
   -d '{
     "apikey": "YOUR_API_KEY",
-    "query": "acme.com",
+    "query": "example.com",
     "type": "all",
     "include_system_info": 1,
     "limit": 100,
@@ -135,9 +135,9 @@ curl -X POST https://api.whiteintel.io/get_corporate_leaks.php \
   "results": [
     {
       "data_type": "stealer",
-      "url": "https://login.microsoftonline.com",
+      "url": "https://login.example.net",
       "log_id": 184729302,
-      "username": "j.smith@acme.com",
+      "username": "j.smith@example.com",
       "password": "REDACTED_FOR_DOC",
       "log_date": "2025-11-14 08:23:11",
       "hostname": "DESKTOP-K91PQ",
@@ -147,8 +147,8 @@ curl -X POST https://api.whiteintel.io/get_corporate_leaks.php \
     },
     {
       "data_type": "combolist",
-      "url": "https://accounts.google.com",
-      "username": "m.fields@acme.com",
+      "url": "https://accounts.example.org",
+      "username": "m.fields@example.com",
       "password": "REDACTED_FOR_DOC",
       "log_date": "2025-09-02 12:00:00"
     }

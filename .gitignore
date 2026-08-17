@@ -3,27 +3,15 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-*.egg-info/
-.eggs/
-build/
 dist/
-wheels/
 
 # Test / coverage / lint caches
-tests/
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.tox/
-.nox/
 .coverage
 coverage.xml
-htmlcov/
 
 # Virtual environments
 .venv/
-venv/
-env/
 
 # Local secrets and runtime config
 .env
@@ -32,8 +20,6 @@ env/
 mcp.json
 
 # IDE / editor
-.vscode/
-.idea/
 *.swp
 *.swo
 *~
@@ -43,15 +29,8 @@ mcp.json
 Thumbs.db
 
 # Local tool state
-.playwright-mcp/
 .code-review-graph/
-graphify-out/
-.agents/
-.codex/
 
 # Logs / temp
 *.log
 *.tmp
-
-# Local reports
-/*代码缺陷报告*.md

@@ -78,8 +78,8 @@ Example:
 
 ```json
 {
-  "query": "acme.com",
-  "subdomain": "admin.acme.com"
+  "query": "example.com",
+  "subdomain": "admin.example.com"
 }
 ```
 

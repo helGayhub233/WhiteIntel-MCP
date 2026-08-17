@@ -2,7 +2,43 @@
 
 All notable changes to WhiteIntel-MCP will be documented in this file.
 
-## [Unreleased]
+## [0.5.0] - 2026-08-17
+
+### Added
+
+- Added `glama.json` for Glama registry metadata and maintainer declaration.
+- Added `SECURITY.md` documenting API key handling, remote binding, write tool
+  protection, and credential data considerations.
+- Added `mcp-name` ownership marker to README for MCP Registry verification.
+
+### Changed
+
+- Clarified `consumer_leaks` tool description: now explicitly states it matches
+  the URL where credentials were captured (site-level domain match) and directs
+  callers to use `corporate_leaks` alongside for full exposure coverage.
+- Clarified `corporate_leaks` tool description: now explicitly states it matches
+  the username's email suffix (email-domain match) and warns about false
+  positives on short or generic domains.
+- Updated `last_leaks` tool description to state it returns both consumer and
+  corporate records in a single call.
+- Reworked README installation section: renamed uvx heading to "一键安装", added
+  uv prerequisite instructions, version-pinning guidance with `--from`, and a
+  pipx installation alternative.
+- Replaced ambiguous "（需启用写工具）" labels in README tool table with
+  "（默认关闭）" and added a dedicated "启用写工具" section with CLI/client
+  config examples, a write-tool risk table, and HTTP authorization notes.
+- Reorganized README structure: numbered installation steps (1. install uv →
+  2. configure client), consolidated all config into a dedicated section
+  (env vars with default-value column, write tools, module scoping), moved
+  alternative install methods below the main flow, and renamed "发布验证" to
+  "开发" with compile/test/build commands.
+- Standardized documentation examples on IANA-reserved domains and documentation
+  IP ranges so examples cannot identify real organizations or infrastructure.
+
+### Removed
+
+- Removed the empty `src/whiteintel_mcp/tools/` package (only contained a
+  docstring `__init__.py` with no implementation).
 
 ## [0.4.0] - 2026-08-03
 
@@ -75,3 +111,5 @@ All notable changes to WhiteIntel-MCP will be documented in this file.
 
 - Split watchlist and supplier action-based endpoints into dedicated MCP tools for clearer model selection.
 - Unified upstream request pacing at `0.2 QPS` per `(endpoint, apikey)`.
+
+[0.5.0]: https://github.com/helGayhub233/WhiteIntel-MCP/compare/v0.4.0...v0.5.0

@@ -75,7 +75,7 @@ class _LastLeaksBase(ApiKeyMixin, PaginationMixin, PasswordMaskMixin):
 class LastLeaksRequest(_LastLeaksBase, NonEmptyQueryMixin):
     """Request model for /get_last_leaks.php"""
 
-    query: str = Field(..., description="Target domain or subdomain (e.g. acme.com).")
+    query: str = Field(..., description="Target domain or subdomain (e.g. example.com).")
     days: int = Field(
         default=7,
         ge=1,
@@ -208,7 +208,7 @@ class CorporateLeaksRequest(_CorporateLeaksBase, NonEmptyQueryMixin):
 
     query: str = Field(
         ...,
-        description="Target corporate domain (e.g. acme.com).",
+        description="Target corporate domain (e.g. example.com).",
     )
 
 
@@ -225,7 +225,7 @@ class DatabaseLeaksRequest(_DatabaseLeaksBase, NonEmptyQueryMixin):
 
     query: str = Field(
         ...,
-        description="Target corporate domain (e.g. acme.com).",
+        description="Target corporate domain (e.g. example.com).",
     )
 
 
@@ -238,7 +238,7 @@ class OverallStatsRequest(ApiKeyMixin):
 
     query: str = Field(
         ...,
-        description="Target domain or subdomain (e.g. acme.com).",
+        description="Target domain or subdomain (e.g. example.com).",
     )
     metric: OverallMetric = Field(
         ...,

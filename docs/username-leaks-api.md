@@ -66,7 +66,7 @@ Empty result responses do not consume a quota credit on either counter.
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `apikey` | string | Yes | — | Your Whiteintel API key. |
-| `query` | string | Yes | — | The exact username or email address to search for (e.g. `j.smith@acme.com`). Matching is performed on the full username field; partial matches are not supported. |
+| `query` | string | Yes | — | The exact username or email address to search for (e.g. `j.smith@example.com`). Matching is performed on the full username field; partial matches are not supported. |
 | `type` | string | No | `all` | Result source type. One of `all`, `stealer`, `combolist`. The parameter name `data_type` is accepted as an alias, and the value `both` is accepted as a legacy alias for `all`. |
 | `include_system_info` | integer | No | `0` | When set to `1`, stealer records include host-level system information. |
 | `mask_password` | integer | No | `0` | When set to `1`, the `password` field is omitted from results. |
@@ -92,7 +92,7 @@ curl -X POST https://api.whiteintel.io/get_leaks_by_username.php \
   -H "Content-Type: application/json" \
   -d '{
     "apikey": "YOUR_API_KEY",
-    "query": "j.smith@acme.com",
+    "query": "j.smith@example.com",
     "type": "all",
     "include_system_info": 1,
     "limit": 100,
@@ -140,8 +140,8 @@ curl -X POST https://api.whiteintel.io/get_leaks_by_username.php \
   "results": [
     {
       "data_type": "stealer",
-      "url": "https://login.microsoftonline.com",
-      "username": "j.smith@acme.com",
+      "url": "https://login.example.net",
+      "username": "j.smith@example.com",
       "password": "REDACTED_FOR_DOC",
       "log_id": 184729302,
       "log_date": "2025-11-14",
@@ -152,8 +152,8 @@ curl -X POST https://api.whiteintel.io/get_leaks_by_username.php \
     },
     {
       "data_type": "combolist",
-      "url": "https://accounts.google.com",
-      "username": "j.smith@acme.com",
+      "url": "https://accounts.example.org",
+      "username": "j.smith@example.com",
       "password": "REDACTED_FOR_DOC",
       "log_date": "2025-09-02 12:00:00"
     }

@@ -63,7 +63,7 @@ Empty result responses do not consume a daily quota credit.
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `apikey` | string | Yes | — | Your Whiteintel API key. |
-| `query` | string | Yes | — | The target corporate domain (e.g. `acme.com`). The endpoint will return database breach records associated with this domain. |
+| `query` | string | Yes | — | The target corporate domain (e.g. `example.com`). The endpoint will return database breach records associated with this domain. |
 | `limit` | integer | No | `500` | Maximum number of account records to return across all breach groups. Allowed range: `1`–`5000`. |
 | `page` | integer | No | `1` | Page number for pagination. |
 | `start_date` | string | No | — | Lower bound of the breach date range, format `YYYY-MM-DD`. Must be paired with `end_date`. |
@@ -71,7 +71,7 @@ Empty result responses do not consume a daily quota credit.
 
 ### Notes on `query`
 
-Supply the registrable corporate domain (for example `acme.com`). Subdomains are normalized to their registrable domain before lookup.
+Supply the registrable corporate domain (for example `example.com`). Subdomains are normalized to their registrable domain before lookup.
 
 ### Notes on date filters
 
@@ -90,7 +90,7 @@ curl -X POST https://api.whiteintel.io/get_third_party_db_leaks.php \
   -H "Content-Type: application/json" \
   -d '{
     "apikey": "YOUR_API_KEY",
-    "query": "acme.com",
+    "query": "example.com",
     "limit": 500,
     "page": 1,
     "start_date": "2010-01-01",
@@ -154,13 +154,13 @@ curl -X POST https://api.whiteintel.io/get_third_party_db_leaks.php \
       "accounts": [
         {
           "id": 1029384,
-          "email": "j.smith@acme.com",
+          "email": "j.smith@example.com",
           "password": null,
           "hashed_password": "$2a$10$REDACTED_FOR_DOC"
         },
         {
           "id": 1029385,
-          "email": "m.fields@acme.com",
+          "email": "m.fields@example.com",
           "password": null,
           "hashed_password": "$2a$10$REDACTED_FOR_DOC"
         }
@@ -177,7 +177,7 @@ curl -X POST https://api.whiteintel.io/get_third_party_db_leaks.php \
       "accounts": [
         {
           "id": 2049182,
-          "email": "user@acme.com",
+          "email": "user@example.com",
           "password": "REDACTED_FOR_DOC",
           "hashed_password": null
         }

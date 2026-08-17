@@ -127,8 +127,8 @@ curl --location 'https://api.whiteintel.io/supplier_api.php' \
   --data '{
     "apikey": "YOUR_API_KEY",
     "action": "add",
-    "domain": "acme.com",
-    "display_name": "Acme Corporation",
+    "domain": "example.com",
+    "display_name": "Example Organization",
     "industry": "SaaS",
     "country": "US",
     "supplier_tier": "high",
@@ -156,7 +156,7 @@ curl --location 'https://api.whiteintel.io/supplier_api.php' \
   --data '{
     "apikey": "YOUR_API_KEY",
     "action": "remove",
-    "domain": "acme.com"
+    "domain": "example.com"
   }'
 ```
 
@@ -176,8 +176,8 @@ curl --location 'https://api.whiteintel.io/supplier_api.php' \
   "suppliers": [
     {
       "id": 4412,
-      "domain": "acme.com",
-      "display_name": "Acme Corporation",
+      "domain": "example.com",
+      "display_name": "Example Organization",
       "size": "200-500",
       "country": "US",
       "industry": "SaaS",
@@ -206,7 +206,7 @@ curl --location 'https://api.whiteintel.io/supplier_api.php' \
   "success": true,
   "action": "added",
   "supplier_id": 4413,
-  "domain": "acme.com",
+  "domain": "example.com",
   "used": 41,
   "limit": 100,
   "remaining": 59,

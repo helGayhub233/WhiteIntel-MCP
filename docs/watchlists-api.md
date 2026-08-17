@@ -128,7 +128,7 @@ Response:
       "id": 988,
       "organizationid": 1337,
       "entry_type": "domain",
-      "entry": "contoso.com",
+      "entry": "example.net",
       "added_by": "api:42",
       "added_at": "2025-09-07 04:10:02",
       "include_usernames": 0,

@@ -103,7 +103,7 @@ curl -X POST https://api.whiteintel.io/get_lookalike_domains.php \
   -H "Content-Type: application/json" \
   -d '{
     "apikey": "YOUR_API_KEY",
-    "query": "acme.com",
+    "query": "example.com",
     "limit": 100,
     "page": 1
   }'
@@ -145,21 +145,21 @@ curl -X POST https://api.whiteintel.io/get_lookalike_domains.php \
   "results": [
     {
       "data_type": "lookalike",
-      "original_entry": "acme.com",
-      "detected_domain": "acme-secure-login.com",
+      "original_entry": "example.com",
+      "detected_domain": "secure-login.example",
       "detected_domain_ip": "203.0.113.118",
-      "detected_domain_ns": "ns1.suspicious-host.net,ns2.suspicious-host.net",
+      "detected_domain_ns": "ns1.example.net,ns2.example.net",
       "whois_json": "{\"registrar\": \"NameCheap, Inc.\", \"registrant_country\": \"PA\"}",
       "creation_date_iso": "2025-10-22T00:00:00Z",
       "discovered_at": "2025-10-23 11:42:08"
     },
     {
       "data_type": "lookalike",
-      "original_entry": "acme.com",
-      "detected_domain": "acme-portal-help.com",
+      "original_entry": "example.com",
+      "detected_domain": "portal-help.example",
       "detected_domain_ip": "198.51.100.42",
-      "detected_domain_ns": "ns1.cloudflare.com,ns2.cloudflare.com",
-      "whois_json": "{\"registrar\": \"GoDaddy.com, LLC\", \"registrant_country\": \"US\"}",
+      "detected_domain_ns": "ns1.example.net,ns2.example.net",
+      "whois_json": "{\"registrar\": \"Example Registrar\", \"registrant_country\": \"US\"}",
       "creation_date_iso": "2025-09-15T00:00:00Z",
       "discovered_at": "2025-09-16 04:18:27"
     }
@@ -188,9 +188,9 @@ When a non-empty `query` is supplied that does not match any of the organization
   "success": false,
   "error": "Query must be empty or one of your watchlist domains.",
   "allowed_queries": [
-    "acme.com",
-    "acme.io",
-    "acmehealth.com"
+    "example.com",
+    "example.org",
+    "example.net"
   ]
 }
 ```

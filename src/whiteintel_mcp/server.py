@@ -476,9 +476,12 @@ def create_server(
         title="Recent Domain Credential Exposures",
         description=(
             "Get the most recent credential exposures for a target domain within a "
-            "1–30 day window. Use consumer_leaks or corporate_leaks for broader "
-            "source-specific investigations, and leaks_by_id after obtaining exact "
-            "record IDs. This read-only request consumes the configured account quota."
+            "1–30 day window. Returns both consumer records (site-level URL match) "
+            "and corporate records (email-domain match) in a single call, filtered "
+            "by the breach_type parameter. For investigations beyond 30 days, call "
+            "consumer_leaks and corporate_leaks separately with date ranges. Use "
+            "leaks_by_id after obtaining exact record IDs from any leak tool. This "
+            "read-only request consumes the configured account quota."
         ),
         annotations=READ_ONLY_TOOL,
     )
@@ -591,10 +594,16 @@ def create_server(
     @mcp.tool(
         title="Consumer Credential Exposures",
         description=(
-            "Get consumer-side credentials for a target domain from infostealers and "
-            "combolists. Use corporate_leaks for organization-owned accounts, "
-            "database_leaks for third-party database breaches, or last_leaks when "
-            "recency is the primary filter. This read-only request consumes daily quota."
+            "Get credentials stolen from a target domain's own website. Matches the "
+            "URL where credentials were captured — returns records from pages under "
+            "the queried domain regardless of the victim's email domain, revealing "
+            "site-level compromise of the domain itself. Use corporate_leaks "
+            "alongside this tool to also find mailboxes belonging to the queried "
+            "email domain that were compromised on third-party "
+            "sites; the two are complementary and should be called together for full "
+            "exposure coverage. Use database_leaks for third-party database "
+            "breaches, or last_leaks when recency within 30 days is the primary "
+            "filter. This read-only request consumes daily quota."
         ),
         annotations=READ_ONLY_TOOL,
     )
@@ -631,9 +640,16 @@ def create_server(
     @mcp.tool(
         title="Corporate Credential Exposures",
         description=(
-            "Get organization-owned credentials exposed through supported sources. "
-            "Use consumer_leaks for consumer accounts or database_leaks when results "
-            "must be limited to third-party database breaches. This read-only request "
+            "Get credentials belonging to an organization's email domain. Matches "
+            "the username's email suffix — returns mailboxes belonging to the "
+            "queried email domain that were "
+            "compromised on any third-party site, regardless of where the "
+            "credential was captured. Non-employees may use the same email domain "
+            "(especially short or generic domains), producing false "
+            "positives; filter results by known employee patterns accordingly. Use "
+            "consumer_leaks alongside this tool to also find credentials stolen "
+            "from the queried domain's own website; the two are complementary and should "
+            "be called together for full exposure coverage. This read-only request "
             "consumes the configured account's daily quota."
         ),
         annotations=READ_ONLY_TOOL,

@@ -137,8 +137,8 @@ curl -X POST https://api.whiteintel.io/get_leaks_by_computer_name.php \
   "results": [
     {
       "data_type": "stealer",
-      "url": "https://login.microsoftonline.com",
-      "username": "j.smith@acme.com",
+      "url": "https://login.example.net",
+      "username": "j.smith@example.com",
       "password": "REDACTED_FOR_DOC",
       "hostname": "DESKTOP-K91PQ",
       "ip": "203.0.113.42",
@@ -149,8 +149,8 @@ curl -X POST https://api.whiteintel.io/get_leaks_by_computer_name.php \
     },
     {
       "data_type": "stealer",
-      "url": "https://accounts.google.com",
-      "username": "jsmith.personal@gmail.com",
+      "url": "https://accounts.example.org",
+      "username": "jsmith.personal@example.net",
       "password": "REDACTED_FOR_DOC",
       "hostname": "DESKTOP-K91PQ",
       "ip": "203.0.113.42",
