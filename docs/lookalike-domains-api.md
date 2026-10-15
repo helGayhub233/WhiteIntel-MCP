@@ -47,7 +47,7 @@ This endpoint is available to **Enterprise** and **Threat Intelligence** subscri
 
 | Limit Type | Description |
 |---|---|
-| Request throttle | Default `0.2 QPS` (1 request every 5 seconds) per account/API key. Exceeding this returns `429 Too Many Requests`. |
+| Request throttle | Default `0.3 QPS` (1 request every ~3.3 seconds) per account/API key. Exceeding this returns `429 Too Many Requests`. |
 | Daily quota | Each API key is provisioned with a daily request quota. Remaining quota is returned in every successful response under `remaining_daily_calls`. |
 
 Once the daily quota is exhausted, requests return `403 Forbidden` with a quota-exceeded message until the counter resets.
@@ -71,7 +71,7 @@ The endpoint supports two distinct query modes, selected by whether the `query` 
 |---|---|---|---|---|
 | `apikey` | string | Yes | — | Your Whiteintel API key. |
 | `query` | string | No | empty | Either an empty value (organization-wide mode) or one of your watchlist domains (watchlist-scoped mode). The value is normalized to lowercase before lookup. |
-| `limit` | integer | No | `500` | Maximum number of records to return. Allowed range: `1`–`5000`. |
+| `limit` | integer | No | `500` | Maximum number of records to return. Provider allowed range: `1`–`5000`; MCP single-call schema cap: `1`–`1000`. |
 | `page` | integer | No | `1` | Page number for pagination. |
 
 ### Notes on `query`
@@ -224,7 +224,7 @@ When a non-empty `query` is supplied that does not match any of the organization
 ## Best Practices
 
 - **Dashboard composition:** For a complete Brand Protection view, use organization-wide mode (empty `query`) and paginate through results. Switch to watchlist-scoped mode when drilling into a specific brand.
-- **Pagination:** Organizations with broad watchlist coverage may produce thousands of detected lookalikes. Paginate using `page` and `limit`. The maximum permitted `limit` is `5000`.
+- **Pagination:** Organizations with broad watchlist coverage may produce thousands of detected lookalikes. Paginate using `page` and `limit`. The provider maximum is `5000`; the MCP single-call maximum is `1000`.
 - **WHOIS payload:** The `whois_json` field is a string-encoded JSON document, not a structured object. Decode it client-side when structured access is required.
 - **Self-correcting clients:** Use the `allowed_queries` field in mismatch responses to populate suggestions or correct typos.
 - **Discovery cadence:** New lookalikes are added on a continuous basis. Use `discovered_at` to drive incremental ingestion.

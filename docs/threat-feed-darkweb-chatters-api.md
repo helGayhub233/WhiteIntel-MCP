@@ -28,7 +28,7 @@ POST https://api.whiteintel.io/get_threat_feeds.php
 | Auth | API key via JSON body `{ "apikey": "..." }`. |
 | Plan requirement | Add-on for yearly Threat Intel license holders (3000 USD/year). |
 | Daily quota | 20 calls per day. |
-| Burst rate limit | Default `0.2 QPS` (1 request every 5 seconds) per account/API key; `429` on violation. |
+| Burst rate limit | Default `0.3 QPS` (1 request every ~3.3 seconds) per account/API key; `429` on violation. |
 | Method | `POST` only. |
 
 ---

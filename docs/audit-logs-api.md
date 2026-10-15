@@ -17,7 +17,7 @@ POST https://api.whiteintel.io/get_audit_logs.php
 
 ## Rate Limits and Quotas
 
-Default request throttle is `0.2 QPS` (1 request every 5 seconds) per account/API key. Audit log reads are often used for troubleshooting after other API calls, so this conservative default avoids compounding burst traffic during investigations.
+Default request throttle is `0.3 QPS` (1 request every ~3.3 seconds) per account/API key. Audit log reads are often used for troubleshooting after other API calls, so this conservative default avoids compounding burst traffic during investigations.
 
 ---
 

@@ -55,7 +55,7 @@ To enable the Threat Feed add-on on your account, contact `info@whiteintel.io`.
 
 | Limit Type | Description |
 |---|---|
-| Request throttle | Default `0.2 QPS` (1 request every 5 seconds) per account/API key. Exceeding this returns `429 Too Many Requests`. |
+| Request throttle | Default `0.3 QPS` (1 request every ~3.3 seconds) per account/API key. Exceeding this returns `429 Too Many Requests`. |
 | Threat Feed daily quota | A dedicated daily quota gates access to this endpoint, tracked separately from the standard API daily quota. Remaining quota is returned in every successful response under `remaining_threat_feed_calls`. |
 
 Each successful call consumes one Threat Feed quota credit, regardless of mode. Once the daily quota is exhausted, requests return a quota-exceeded message until the counter resets.

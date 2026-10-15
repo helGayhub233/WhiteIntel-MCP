@@ -33,7 +33,7 @@ The API key must be valid and attached to an organization.
 
 | Limit Type | Description |
 | --- | --- |
-| Request throttle | Default `0.2 QPS` (1 request every 5 seconds) per account/API key. This conservative default is used when the upstream wait time is not specified; clients should still honor `429`/`Retry-After` responses. |
+| Request throttle | Default `0.3 QPS` (1 request every ~3.3 seconds) per account/API key. This conservative default is used when the upstream wait time is not specified; clients should still honor `429`/`Retry-After` responses. |
 | Daily quota | Remaining quota is returned as `remaining_daily_calls`. |
 | Supplier slots | Active suppliers are capped by the organization's supplier credit allowance. |
 

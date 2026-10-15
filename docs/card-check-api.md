@@ -50,7 +50,7 @@ Access is governed by a daily call quota associated with your API key. Each requ
 
 When the daily limit is reached, further requests are rejected until the quota resets. To request a higher limit, contact your account representative.
 
-Default request throttle is `0.2 QPS` (1 request every 5 seconds) per account/API key. The fixed 20-record page size can encourage repeated pagination, so clients should keep this default unless the upstream account explicitly allows a higher burst rate.
+Default request throttle is `0.3 QPS` (1 request every ~3.3 seconds) per account/API key. The fixed 20-record page size can encourage repeated pagination, so clients should keep this default unless the upstream account explicitly allows a higher burst rate.
 
 ---
 

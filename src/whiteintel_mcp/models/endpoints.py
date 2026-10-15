@@ -14,12 +14,14 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from whiteintel_mcp.models.common import (
     ApiKeyMixin,
+    LeakIds,
     DateRangeMixin,
     IndependentDateBoundsMixin,
     PaginationMixin,
     PasswordMaskMixin,
     SystemInfoMixin,
     TypeFilterMixin,
+    UsernameSourceType,
 )
 
 SourceType = Literal["all", "stealer", "combolist"]
@@ -64,18 +66,18 @@ class NonEmptyQueryMixin(BaseModel):
         return value
 
 
-# ---------------------------------------------------------------------------
-# Last Leaks
-# ---------------------------------------------------------------------------
+# Last Leaks.
 
 class _LastLeaksBase(ApiKeyMixin, PaginationMixin, PasswordMaskMixin):
     pass
 
 
 class LastLeaksRequest(_LastLeaksBase, NonEmptyQueryMixin):
-    """Request model for /get_last_leaks.php"""
+    """Define the request model for the /get_last_leaks.php endpoint."""
 
     query: str = Field(..., description="Target domain or subdomain (e.g. example.com).")
+    # Upstream documents `days` as required (1-30); the 7-day default keeps MCP
+    # calls self-contained. Revisit if the official API relaxes it to optional.
     days: int = Field(
         default=7,
         ge=1,
@@ -99,16 +101,14 @@ class LastLeaksRequest(_LastLeaksBase, NonEmptyQueryMixin):
     )
 
 
-# ---------------------------------------------------------------------------
-# Threat Feed
-# ---------------------------------------------------------------------------
+# Threat Feed.
 
 class _ThreatFeedBase(ApiKeyMixin, IndependentDateBoundsMixin):
     pass
 
 
 class ThreatFeedRequest(_ThreatFeedBase):
-    """Request model for /get_threat_feeds.php
+    """Define the request model for the /get_threat_feeds.php endpoint.
 
     Mode is auto-selected by which parameters are supplied:
     - taxonomy present → taxonomy mode
@@ -167,9 +167,7 @@ class ThreatFeedRequest(_ThreatFeedBase):
         return value
 
 
-# ---------------------------------------------------------------------------
-# Consumer Leaks
-# ---------------------------------------------------------------------------
+# Consumer Leaks.
 
 class _ConsumerLeaksBase(
     ApiKeyMixin, PaginationMixin, DateRangeMixin,
@@ -179,7 +177,7 @@ class _ConsumerLeaksBase(
 
 
 class ConsumerLeaksRequest(_ConsumerLeaksBase, NonEmptyQueryMixin):
-    """Request model for /get_consumer_leaks.php"""
+    """Define the request model for the /get_consumer_leaks.php endpoint."""
 
     query: str = Field(..., description="Target domain (e.g. example.com).")
     username: str | None = Field(
@@ -192,10 +190,12 @@ class ConsumerLeaksRequest(_ConsumerLeaksBase, NonEmptyQueryMixin):
     )
 
 
-# ---------------------------------------------------------------------------
-# Corporate Leaks
-# ---------------------------------------------------------------------------
+# Corporate Leaks.
 
+# TODO(sync-with-official): official sandbox docs (docs/sandbox-corporate-leaks.md)
+# document `type="database"` and `include_database_leaks` for this endpoint;
+# the production documentation and OpenAPI spec do not yet. Extend this model
+# when production documents them.
 class _CorporateLeaksBase(
     ApiKeyMixin, PaginationMixin, DateRangeMixin,
     PasswordMaskMixin, SystemInfoMixin, TypeFilterMixin,
@@ -204,7 +204,7 @@ class _CorporateLeaksBase(
 
 
 class CorporateLeaksRequest(_CorporateLeaksBase, NonEmptyQueryMixin):
-    """Request model for /get_corporate_leaks.php"""
+    """Define the request model for the /get_corporate_leaks.php endpoint."""
 
     query: str = Field(
         ...,
@@ -212,16 +212,14 @@ class CorporateLeaksRequest(_CorporateLeaksBase, NonEmptyQueryMixin):
     )
 
 
-# ---------------------------------------------------------------------------
-# Database Leaks
-# ---------------------------------------------------------------------------
+# Database Leaks.
 
 class _DatabaseLeaksBase(ApiKeyMixin, PaginationMixin, DateRangeMixin):
     pass
 
 
 class DatabaseLeaksRequest(_DatabaseLeaksBase, NonEmptyQueryMixin):
-    """Request model for /get_third_party_db_leaks.php"""
+    """Define the request model for the /get_third_party_db_leaks.php endpoint."""
 
     query: str = Field(
         ...,
@@ -229,12 +227,10 @@ class DatabaseLeaksRequest(_DatabaseLeaksBase, NonEmptyQueryMixin):
     )
 
 
-# ---------------------------------------------------------------------------
-# Overall Stats
-# ---------------------------------------------------------------------------
+# Overall Stats.
 
 class OverallStatsRequest(ApiKeyMixin):
-    """Request model for /get_overall_stats.php"""
+    """Define the request model for the /get_overall_stats.php endpoint."""
 
     query: str = Field(
         ...,
@@ -253,16 +249,14 @@ class OverallStatsRequest(ApiKeyMixin):
     )
 
 
-# ---------------------------------------------------------------------------
-# IP Leaks
-# ---------------------------------------------------------------------------
+# IP Leaks.
 
 class _IPLeaksBase(ApiKeyMixin, PaginationMixin, DateRangeMixin, PasswordMaskMixin):
     pass
 
 
 class IPLeaksRequest(_IPLeaksBase, NonEmptyQueryMixin):
-    """Request model for /get_leaks_by_ip.php"""
+    """Define the request model for the /get_leaks_by_ip.php endpoint."""
 
     query: str = Field(
         ...,
@@ -276,16 +270,14 @@ class IPLeaksRequest(_IPLeaksBase, NonEmptyQueryMixin):
         return value
 
 
-# ---------------------------------------------------------------------------
-# Computer Leaks
-# ---------------------------------------------------------------------------
+# Computer Leaks.
 
 class _ComputerLeaksBase(ApiKeyMixin, PaginationMixin, DateRangeMixin, PasswordMaskMixin):
     pass
 
 
 class ComputerLeaksRequest(_ComputerLeaksBase, NonEmptyQueryMixin):
-    """Request model for /get_leaks_by_computer_name.php"""
+    """Define the request model for the /get_leaks_by_computer_name.php endpoint."""
 
     query: str = Field(
         ...,
@@ -293,9 +285,7 @@ class ComputerLeaksRequest(_ComputerLeaksBase, NonEmptyQueryMixin):
     )
 
 
-# ---------------------------------------------------------------------------
-# Username Leaks
-# ---------------------------------------------------------------------------
+# Username Leaks.
 
 class _UsernameLeaksBase(
     ApiKeyMixin, PaginationMixin, DateRangeMixin,
@@ -305,24 +295,29 @@ class _UsernameLeaksBase(
 
 
 class UsernameLeaksRequest(_UsernameLeaksBase, NonEmptyQueryMixin):
-    """Request model for /get_leaks_by_username.php"""
+    """Define the request model for the /get_leaks_by_username.php endpoint."""
 
     query: str = Field(
         ...,
         description="Exact username or email address to search for.",
     )
+    type: UsernameSourceType = Field(
+        default="all",
+        description=(
+            "Result source type: 'all', 'stealer', 'combolist', or "
+            "'database' (third-party breach records)."
+        ),
+    )
 
 
-# ---------------------------------------------------------------------------
-# Lookalike Domains
-# ---------------------------------------------------------------------------
+# Lookalike Domains.
 
 class _LookalikeDomainsBase(ApiKeyMixin, PaginationMixin):
     pass
 
 
 class LookalikeDomainsRequest(_LookalikeDomainsBase):
-    """Request model for /get_lookalike_domains.php
+    """Define the request model for the /get_lookalike_domains.php endpoint.
 
     When query is empty/omitted, returns organization-wide results.
     When query is supplied, returns lookalikes targeting that watchlist entry.
@@ -336,18 +331,16 @@ class LookalikeDomainsRequest(_LookalikeDomainsBase):
     )
 
 
-# ---------------------------------------------------------------------------
-# Get Leaks By ID
-# ---------------------------------------------------------------------------
+# Get Leaks By ID.
 
 class LeaksByIDRequest(ApiKeyMixin, PasswordMaskMixin):
-    """Request model for /get_leaks_by_id.php
+    """Define the request model for the /get_leaks_by_id.php endpoint.
 
     Supports single-ID lookup (pass an int) or batched lookup
     (pass a list of 1–5 ints).
     """
 
-    query: int | list[int] = Field(
+    query: LeakIds = Field(
         ...,
         description="Single log ID or list of up to 5 log IDs.",
     )
@@ -366,12 +359,10 @@ class LeaksByIDRequest(ApiKeyMixin, PasswordMaskMixin):
         return value
 
 
-# ---------------------------------------------------------------------------
-# Watchlist Manage
-# ---------------------------------------------------------------------------
+# Watchlist Manage.
 
 class WatchlistManageRequest(ApiKeyMixin):
-    """Request model for /watchlist_manage.php
+    """Define the request model for the /watchlist_manage.php endpoint.
 
     The required fields depend on the action:
     - list:  type, status, page, limit are optional filters
@@ -463,12 +454,10 @@ class WatchlistManageRequest(ApiKeyMixin):
         return self
 
 
-# ---------------------------------------------------------------------------
-# Supplier Security
-# ---------------------------------------------------------------------------
+# Supplier Security.
 
 class SupplierRequest(ApiKeyMixin):
-    """Request model for /supplier_api.php"""
+    """Define the request model for the /supplier_api.php endpoint."""
 
     action: SupplierAction = Field(
         ...,
@@ -582,12 +571,10 @@ class SupplierRequest(ApiKeyMixin):
         return self
 
 
-# ---------------------------------------------------------------------------
-# Audit Logs
-# ---------------------------------------------------------------------------
+# Audit Logs.
 
 class AuditLogsRequest(ApiKeyMixin):
-    """Request model for /get_audit_logs.php"""
+    """Define the request model for the /get_audit_logs.php endpoint."""
 
     page: int = Field(
         default=1,
@@ -596,9 +583,7 @@ class AuditLogsRequest(ApiKeyMixin):
     )
 
 
-# ---------------------------------------------------------------------------
-# Card Check
-# ---------------------------------------------------------------------------
+# Card Check.
 
 CardCheckSelector = Literal["bin", "issuer", "country"]
 CardCheckSortBy = Literal["exposed_date", "expiry"]
@@ -607,18 +592,18 @@ CardCheckType = Literal["credit", "debit"]
 
 
 class CardCheckRequest(ApiKeyMixin):
-    """Request model for /card_check.php
+    """Define the request model for the /card_check.php endpoint.
 
     Exactly one primary selector (bin / issuer / country) is required.
     All other parameters are optional filters.
     """
 
-    # ── Primary selector (exactly one required) ─────────────────
+    # Primary selector; exactly one is required.
     bin: str | None = Field(
         default=None,
         min_length=6,
         max_length=8,
-        pattern=r"^\d{6,8}$",
+        pattern=r"^(?:[0-9]{6}|[0-9]{8})$",
         description="BIN (6 or 8 digits).",
     )
     issuer: str | None = Field(
@@ -634,7 +619,7 @@ class CardCheckRequest(ApiKeyMixin):
         description="ISO alpha-2 country code or partial country name.",
     )
 
-    # ── Optional filters ────────────────────────────────────────
+    # Optional filters.
     networks: list[str] | None = Field(
         default=None,
         min_length=1,
@@ -664,17 +649,19 @@ class CardCheckRequest(ApiKeyMixin):
         description="Return only cards with valid (non-expired) expiry.",
     )
 
-    # ── Date range ──────────────────────────────────────────────
+    # Date range.
     exposed_after: str | None = Field(
         default=None,
+        pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
         description="Lower bound of exposed date, YYYY-MM-DD.",
     )
     exposed_before: str | None = Field(
         default=None,
+        pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
         description="Upper bound of exposed date, YYYY-MM-DD.",
     )
 
-    # ── Sorting & pagination ────────────────────────────────────
+    # Sorting and pagination.
     sort_by: CardCheckSortBy = Field(
         default="exposed_date",
         description="Sort field: 'exposed_date' or 'expiry'.",
@@ -736,12 +723,10 @@ class CardCheckRequest(ApiKeyMixin):
         return self
 
 
-# ---------------------------------------------------------------------------
-# Threat Feed Darkweb Chatters (add-on)
-# ---------------------------------------------------------------------------
+# Threat Feed Darkweb Chatters (add-on).
 
 class DarkwebChattersRequest(ApiKeyMixin, IndependentDateBoundsMixin):
-    """Request model for /get_threat_feeds.php (Darkweb Chatters add-on).
+    """Define the Darkweb Chatters request model for /get_threat_feeds.php.
 
     Shares the same upstream endpoint as the standard Threat Feed but is
     governed by a dedicated entitlement and Threat Feed quota.

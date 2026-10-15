@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import os
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SourceType = Literal["all", "stealer", "combolist"]
+UsernameSourceType = Literal["all", "stealer", "combolist", "database"]
+LeakIds = Annotated[int, Field(ge=1)] | Annotated[list[Annotated[int, Field(ge=1)]], Field(min_length=1, max_length=5)]
 
 
 class ApiKeyMixin(BaseModel):
     """Every WhiteIntel API request requires an API key in the body."""
+
+    model_config = ConfigDict(extra="forbid")
 
     apikey: str = Field(
         ...,
@@ -36,10 +40,10 @@ class PaginationMixin(BaseModel):
     """Pagination parameters shared by list-style endpoints."""
 
     limit: int = Field(
-        default=1000,
+        default=100,
         ge=1,
-        le=5000,
-        description="Maximum number of records to return (1–5000).",
+        le=1000,
+        description="Maximum number of records to return per page (1–1000). Default interactive page is 100; request larger collections through pagination.",
     )
     page: int = Field(
         default=1,
@@ -53,10 +57,12 @@ class DateRangeMixin(BaseModel):
 
     start_date: str | None = Field(
         default=None,
+        pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
         description="Lower bound of date range, format YYYY-MM-DD.",
     )
     end_date: str | None = Field(
         default=None,
+        pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
         description="Upper bound of date range, format YYYY-MM-DD.",
     )
 
@@ -85,10 +91,12 @@ class IndependentDateBoundsMixin(BaseModel):
 
     start_date: str | None = Field(
         default=None,
+        pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
         description="Optional inclusive lower bound, format YYYY-MM-DD.",
     )
     end_date: str | None = Field(
         default=None,
+        pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
         description="Optional inclusive upper bound, format YYYY-MM-DD.",
     )
 
@@ -141,9 +149,7 @@ class DataTypeMixin(BaseModel):
     )
 
 
-# ---------------------------------------------------------------------------
-# Aliases for endpoints that use 'type' instead of 'data_type'
-# ---------------------------------------------------------------------------
+# Aliases for endpoints that use 'type' instead of 'data_type'.
 
 class TypeFilterMixin(BaseModel):
     """Filter by source type (used by consumer_leaks, corporate_leaks, username_leaks)."""

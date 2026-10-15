@@ -18,6 +18,8 @@ class ToolErrorCode(str, Enum):
     FORBIDDEN = "FORBIDDEN"
     UPSTREAM_UNAVAILABLE = "UPSTREAM_UNAVAILABLE"
     UPSTREAM_ERROR = "UPSTREAM_ERROR"
+    TOOL_NOT_FOUND = "TOOL_NOT_FOUND"
+    INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
 _QUOTA_MARKERS = ("quota", "daily limit", "request limit", "credit allowance")
@@ -79,8 +81,8 @@ def classify_error(result: dict[str, Any]) -> ToolErrorCode:
     return ToolErrorCode.UPSTREAM_ERROR
 
 
-def to_tool_error(result: dict[str, Any]) -> ToolError:
-    """Build a machine-readable error that MCPServer emits with ``is_error=true``."""
+def failure_payload(result: dict[str, Any]) -> dict[str, Any]:
+    """Keep error classification in the same response envelope as successful calls."""
     code = classify_error(result)
     payload: dict[str, Any] = {
         "code": code.value,
@@ -90,4 +92,15 @@ def to_tool_error(result: dict[str, Any]) -> ToolError:
     }
     if result.get("retry_after") is not None:
         payload["retry_after"] = result["retry_after"]
-    return ToolError(json.dumps(payload, ensure_ascii=True, separators=(",", ":")))
+    return {
+        "success": False,
+        "http_status": result.get("http_status", 502),
+        "error": payload,
+        "completeness": "unknown",
+        "next_action": "stop",
+    }
+
+
+def to_tool_error(result: dict[str, Any]) -> ToolError:
+    """Compatibility helper; MCP tools return failure_payload instead of raising it."""
+    return ToolError(json.dumps(failure_payload(result)["error"], separators=(",", ":")))

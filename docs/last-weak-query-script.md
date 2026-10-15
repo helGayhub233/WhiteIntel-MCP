@@ -1,7 +1,12 @@
 # Last Weak Query Script Usage Guide
 
 > Source: Internal script documentation
-> date: 2026-07-10
+> date: 2026-10-15
+
+<!-- TODO(sync-with-official): the QPS default in this guide was raised to 0.3
+in line with WHITEINTEL_UPSTREAM_QPS. The standalone script
+(threat-intel-monitor/scripts/query_last_weak_single.py) lives outside this
+repository; its own `--qps` default must be updated to 0.3 to match this guide. -->
 
 This document describes the standalone lightweight script `threat-intel-monitor/scripts/query_last_weak_single.py`. The script follows the API conventions in the project's `docs` directory and the existing implementation in `threat-intel-monitor/scripts/query_last_weak.py`, but remains a single file with zero project-internal dependencies for easy standalone execution.
 
@@ -18,7 +23,7 @@ threat-intel-monitor/scripts/query_last_weak_single.py
 - Supports single or multiple domain inputs
 - Supports `--query-time` to specify the query time window
 - Supports `txt/csv` domain file input
-- Built-in sequential QPS control, default `0.2 QPS`
+- Built-in sequential QPS control, default `0.3 QPS`
 - Automatic delayed retry on timeout, `429`, `5xx`, rate limiting, or upstream error prompts
 - Supports stdout or CSV file output
 - Displays plaintext passwords by default; passwords are hidden only when `--mask-passwords` is explicitly specified
@@ -53,7 +58,7 @@ python threat-intel-monitor/scripts/query_last_weak_single.py \
 This automatically uses default values:
 
 - Query time: `1` day
-- `QPS=0.2`
+- `QPS=0.3`
 - Timeout: `30` seconds
 - Max retries: `3`
 - Max pages to fetch: `1`
@@ -111,7 +116,7 @@ python threat-intel-monitor/scripts/query_last_weak_single.py \
 | `--query-time` / `--days` | Query time window (days), range `1-30` | `1` |
 | `--limit` | Records per page, range `1-5000` | `500` |
 | `--max-pages` | Max pages to fetch per domain | `1` |
-| `--qps` | Requests per second | `0.2 QPS` |
+| `--qps` | Requests per second | `0.3 QPS` |
 | `--timeout` | Single request timeout in seconds | `30` |
 | `--max-retries` | Max retries per page | `3` |
 | `--retry-wait` | Initial retry wait in seconds | `10` |
@@ -152,7 +157,7 @@ When `enabled` is `false/no/0/n`, the domain is skipped.
 
 The script processes requests sequentially (no concurrency).
 
-- `--qps 0.2` means at most 1 request per 5 seconds
+- `--qps 0.3` means at most 1 request per ~3.3 seconds
 - Rate limiting is checked before each request
 - Automatic delayed retry occurs in these situations:
   - Network timeout
@@ -170,7 +175,7 @@ Example:
 python threat-intel-monitor/scripts/query_last_weak_single.py \
   --domain example.com \
   --query-time 1 \
-  --qps 0.2 \
+  --qps 0.3 \
   --timeout 20 \
   --max-retries 3 \
   --retry-wait 10 \
@@ -221,7 +226,7 @@ In addition to the above fixed fields, the script also expands the raw fields fr
 
 - For initial testing, use a single domain + `--query-time 1`
 - For minimum input, run `python ... query_last_weak_single.py example.com`
-- If the target API enforces strict QPS, keep the default `--qps 0.2`
+- If the target API enforces strict QPS, keep the default `--qps 0.3`
 - For bulk domain queries, use `--domains-file`
 - For connectivity verification, keep the default `--max-pages 1`
 - For sensitive data, explicitly add `--mask-passwords`

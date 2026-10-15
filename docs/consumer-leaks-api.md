@@ -47,7 +47,7 @@ This endpoint is available to **Enterprise** and **Threat Intelligence** subscri
 
 | Limit Type | Description |
 |---|---|
-| Request throttle | Default `0.2 QPS` (1 request every 5 seconds) per account/API key. Exceeding this returns `429 Too Many Requests`. |
+| Request throttle | Default `0.3 QPS` (1 request every ~3.3 seconds) per account/API key. Exceeding this returns `429 Too Many Requests`. |
 | Daily quota | Each API key is provisioned with a daily request quota. Remaining quota is returned in every successful response under `remaining_daily_calls`. |
 
 Once the daily quota is exhausted, requests return `403 Forbidden` with a quota-exceeded message until the counter resets.
@@ -63,7 +63,7 @@ Once the daily quota is exhausted, requests return `403 Forbidden` with a quota-
 | `type` | string | No | `all` | Result source type. One of `all`, `stealer`, `combolist`. |
 | `include_system_info` | integer | No | `0` | When set to `1`, stealer records include host-level system information. |
 | `mask_password` | integer | No | `0` | When set to `1`, the `password` field is omitted from results. |
-| `limit` | integer | No | `500` | Maximum number of records to return. Allowed range: `1`–`5000`. |
+| `limit` | integer | No | `500` | Maximum number of records to return. Provider allowed range: `1`–`5000`; MCP single-call schema cap: `1`–`1000`. |
 | `page` | integer | No | `1` | Page number for pagination. |
 | `start_date` | string | No | — | Lower bound of the log date range, format `YYYY-MM-DD`. Must be paired with `end_date`. |
 | `end_date` | string | No | — | Upper bound of the log date range, format `YYYY-MM-DD`. Must be paired with `start_date`. |
@@ -203,7 +203,7 @@ All error responses return a JSON body with either an `error` or `message` field
 
 ## Best Practices
 
-- **Pagination:** For domains with large exposure footprints, paginate using `page` and `limit` rather than requesting a single oversized result set. The maximum permitted `limit` is `5000`.
+- **Pagination:** For domains with large exposure footprints, paginate using `page` and `limit` rather than requesting a single oversized result set. The provider maximum is `5000`; the MCP single-call maximum is `1000`.
 - **Result type:** When monitoring a specific data source, use `type=stealer` or `type=combolist` to reduce payload size and response latency. Use `type=all` for unified views.
 - **System information:** Set `include_system_info=1` only when host-level context is required for triage. Omit otherwise to reduce response size.
 - **Password masking:** Use `mask_password=1` for compliance-sensitive integrations where credential material should not transit downstream systems.

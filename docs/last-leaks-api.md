@@ -1,7 +1,13 @@
 # Last Leaks API
 
 > Source: https://docs.whiteintel.io/whiteintel-api-doc/leak-discovery/last-leaks-api
-> date: 2026-05-10
+> date: 2026-10-15
+
+<!-- TODO(sync-with-official): `days` is documented as required (range 1-30,
+no default) on this page and in the official OpenAPI spec; the MCP model
+supplies a 7-day default so the parameter is always transmitted. If the
+official API ever relaxes `days` to optional, revisit LastLeaksRequest and
+this page. -->
 
 The Last Leaks endpoint returns the most recent credential exposures for a target domain across both consumer and corporate breach categories within a configurable look-back window. It is designed for incremental ingestion and continuous monitoring workflows where only newly observed leaks are required.
 
@@ -50,7 +56,7 @@ This endpoint is available to **Enterprise** and **Threat Intelligence** subscri
 
 ## Rate Limits and Quotas
 
-Default request throttle is `0.2 QPS` (1 request every 5 seconds) per account/API key. This conservative default keeps sequential page fetches and concurrent MCP tool calls below common upstream burst-interception thresholds.
+Default request throttle is `0.3 QPS` (1 request every ~3.3 seconds) per account/API key. This conservative default keeps sequential page fetches and concurrent MCP tool calls below common upstream burst-interception thresholds.
 
 Each API key is provisioned with a daily request quota. Remaining quota is returned in every successful response under `remaining_daily_calls`. Once the daily quota is exhausted, requests return a quota-exceeded message until the counter resets.
 
@@ -68,21 +74,35 @@ Empty result responses do not consume a daily quota credit.
 | `data_type` | string | No | `all` | Source type filter. One of `all`, `stealer`, `combolist`. |
 | `breach_type` | string | No | `all` | Breach category filter. One of `all`, `consumer`, `corporate`. |
 | `mask_password` | integer | No | `0` | When set to `1`, the `password` field is omitted from results. |
-| `limit` | integer | No | `500` | Maximum number of records to return. Allowed range: `1`–`5000`. |
+| `limit` | integer | No | `500` | Maximum number of records to return. Provider allowed range: `1`–`5000`; MCP single-call schema cap: `1`–`1000`. |
 | `page` | integer | No | `1` | Page number for pagination. |
+| `sortBy` | string | No | `index_date` | Sort key. Retrieve results sorted by `index_date` (ingestion time) or `log_date` (root incident date). |
 
 ### Notes on `data_type` and `breach_type`
 
 The two filters are orthogonal and can be combined freely:
 
-- `data_type` — The **source** of the credential record (`stealer` or `combolist`).
-- `breach_type` — The **subject** of the credential record (`consumer` or `corporate`).
+| Filter | Describes |
+|---|---|
+| `data_type` | The **source** of the credential record — whether it came from an infostealer log (`stealer`) or a credential combolist (`combolist`). |
+| `breach_type` | The **subject** of the credential record — whether it belongs to a consumer of the queried site (`consumer`) or an employee of the queried organization (`corporate`). |
 
-Setting either filter to `all` removes that dimension from the filter. Using `data_type=all` and `breach_type=all` returns the broadest possible result set.
+Setting either filter to `all` removes that dimension from the filter. Using `data_type=all` and `breach_type=all` returns the broadest possible result set for the configured look-back window.
+
+### Notes on `sortBy`
+
+By default, results are sorted by **index date** — the moment our engine processes and indexes the detected data. Because of how the dark web economy operates around stealer logs and credential leaks, older breach dates can surface in fresh indexing batches. Sorting by index date ensures you see every newly discovered entry, even if the underlying incident happened months or years ago.
+
+Set `sortBy` to `log_date` to sort by **root incident date** instead — the time the credential was originally compromised. This returns the most recent breaches first, but you may miss older entries that were only recently added to our index.
+
+**When to use each:**
+
+- **`index_date`** (default): continuous monitoring, alerting pipelines, and any workflow where you must not miss newly indexed data.
+- **`log_date`**: investigations or reports focused on the freshest real-world incidents.
 
 ### Notes on `query`
 
-Supply either a registrable domain (e.g. `example.com`) or a specific subdomain (e.g. `mail.example.com`). The endpoint will route the lookup automatically.
+Supply either a registrable domain (e.g. `example.com`) or a specific subdomain (e.g. `mail.example.com`). The endpoint will route the lookup automatically. For corporate breach matching, only the registrable domain portion is used; subdomains are relevant only for consumer breach matching.
 
 ### System Information
 
@@ -101,6 +121,7 @@ curl -X POST https://api.whiteintel.io/get_last_leaks.php \
     "days": 7,
     "data_type": "all",
     "breach_type": "all",
+    "sortBy": "index_date",
     "limit": 500,
     "page": 1
   }'
@@ -116,14 +137,14 @@ curl -X POST https://api.whiteintel.io/get_last_leaks.php \
 |---|---|---|
 | `success` | boolean | `true` when the request completed successfully. |
 | `remaining_daily_calls` | integer | Remaining requests on the daily quota for the current API key. |
-| `results` | array | Array of leak records, sorted by `log_date` in descending order. |
+| `results` | array | Array of leak records, sorted descending by the requested sort key (see Notes on `sortBy`). |
 
 ### Result Object
 
 | Field | Type | Applies To | Description |
 |---|---|---|---|
 | `data_type` | string | All | Either `stealer` or `combolist`. |
-| `breach_type` | string | All | Either `consumer` or `corporate`. |
+| `breach_type` | string | All | Either `consumer` or `corporate`. Indicates whether the record was matched against the captured URL (consumer) or the email domain of the username (corporate). |
 | `url` | string | All | The URL where the credential was captured. |
 | `username` | string | All | The exposed username or email address. |
 | `password` | string | All (when `mask_password=0`) | The exposed password in plaintext. Omitted entirely when `mask_password=1`. |
@@ -212,11 +233,12 @@ curl -X POST https://api.whiteintel.io/get_last_leaks.php \
 
 ## Best Practices
 
-- **Incremental ingestion:** Use a fixed `days` value aligned with your polling cadence (e.g. `days=1` for hourly polling, `days=7` for weekly digests).
-- **Filter selection:** Combine `data_type` and `breach_type` filters to scope responses to the exact slice you need.
-- **Pagination:** For high-exposure organizations, paginate using `page` and `limit`. The maximum permitted `limit` is `5000`.
-- **Password masking:** Use `mask_password=1` for compliance-sensitive integrations.
-- **Quota monitoring:** Track the `remaining_daily_calls` field after each successful response.
+- **Incremental ingestion:** Use a fixed `days` value aligned with your polling cadence (e.g. `days=1` for hourly polling, `days=7` for weekly digests). The endpoint always returns records added within the look-back window relative to the time of the request.
+- **Sort semantics:** Keep the default `sortBy=index_date` for monitoring pipelines so newly indexed records are never missed; use `sortBy=log_date` for investigations focused on the freshest real-world incidents.
+- **Filter selection:** Combine `data_type` and `breach_type` filters to scope responses to the exact slice you need. For example, `data_type=stealer` with `breach_type=corporate` returns only employee credentials sourced from infostealer logs.
+- **Pagination:** For high-exposure organizations or wide look-back windows, paginate using `page` and `limit` rather than requesting a single oversized result set. The provider maximum is `5000`; the MCP single-call maximum is `1000`.
+- **Password masking:** Use `mask_password=1` for compliance-sensitive integrations where credential material should not transit downstream systems.
+- **Quota monitoring:** Track the `remaining_daily_calls` field after each successful response to anticipate quota exhaustion before it occurs.
 
 ---
 

@@ -1,15 +1,22 @@
 # Username Leaks API
 
-> Source: https://docs.whiteintel.io/whiteintel-api-doc/leak-discovery/username-leaks-api
-> date: 2026-05-10
+> Source: https://docs.whiteintel.io/whiteintel-api-doc/leak-discovery/leaks-by-username
+> date: 2026-10-15
+
+<!-- TODO(sync-with-official): two known upstream inconsistencies to revisit.
+(1) The official page's Best Practices still reference `remaining_username_calls`,
+while its quota table, schema, and example use `remaining_daily_calls`; this
+mirror follows the latter.
+(2) For `data_type: "database"` records, the production page names the
+description field `description`, while the sandbox page
+(sandbox-username-leaks.md) names it `database_description`. Align once the
+official documentation is consistent. -->
 
 This endpoint can be used for retrieving leaks related to the given email address or username.
 
 The Username Leaks API endpoint returns credential records where the leaked username exactly matches the supplied query. It is intended for targeted lookups against a specific email address or account identifier rather than broad domain or organization sweeps.
 
-Results are sourced from infostealer logs and combolists, and include the captured login URL, password (or masked password), and timestamp, with optional host-level system information for stealer-sourced records.
-
-This endpoint maintains a dedicated quota counter that is independent from the daily quota used by the domain-scoped endpoints.
+Results are sourced from infostealer logs, combolists, and third-party breach databases, and include the captured login URL, password (or masked password), and timestamp, with optional host-level system information for stealer-sourced records.
 
 ---
 
@@ -51,9 +58,9 @@ This endpoint is available to **Enterprise** and **Threat Intelligence** subscri
 
 | Limit Type | Description |
 |---|---|
-| Request throttle | Default `0.2 QPS` (1 request every 5 seconds) per account/API key. Exceeding this returns `429 Too Many Requests`. |
+| Request throttle | Default `0.3 QPS` (1 request every ~3.3 seconds) per account/API key. Exceeding this returns `429 Too Many Requests`. |
 | Daily quota | A daily request quota gates access to all API endpoints. |
-| Username search quota | This endpoint additionally consumes a **dedicated username search quota** that is tracked separately from the daily quota. The remaining balance is returned in every successful response under `remaining_username_calls`. |
+| Search quota | This endpoint additionally consumes a **dedicated username search quota**. The remaining balance is returned in every successful response under `remaining_daily_calls`. |
 
 When the username search quota is exhausted, the endpoint returns a quota-exhaustion message until the counter resets or the quota is increased.
 
@@ -67,10 +74,10 @@ Empty result responses do not consume a quota credit on either counter.
 |---|---|---|---|---|
 | `apikey` | string | Yes | — | Your Whiteintel API key. |
 | `query` | string | Yes | — | The exact username or email address to search for (e.g. `j.smith@example.com`). Matching is performed on the full username field; partial matches are not supported. |
-| `type` | string | No | `all` | Result source type. One of `all`, `stealer`, `combolist`. The parameter name `data_type` is accepted as an alias, and the value `both` is accepted as a legacy alias for `all`. |
-| `include_system_info` | integer | No | `0` | When set to `1`, stealer records include host-level system information. |
+| `type` | string | No | `all` | Result source type. One of `all`, `stealer`, `combolist`, or `database` (third-party breach records). The parameter name `data_type` is accepted as an alias, and the value `both` is accepted as a legacy alias for `all`. |
+| `include_system_info` | integer | No | `0` | When set to `1`, stealer records include host-level system information (applies to `stealer` and `all` types). |
 | `mask_password` | integer | No | `0` | When set to `1`, the `password` field is omitted from results. |
-| `limit` | integer | No | `500` | Maximum number of records to return. Allowed range: `1`–`5000`. |
+| `limit` | integer | No | `500` | Maximum number of records to return. Provider allowed range: `1`–`5000`; MCP single-call schema cap: `1`–`1000`. |
 | `page` | integer | No | `1` | Page number for pagination. |
 | `start_date` | string | No | — | Lower bound of the log date range, format `YYYY-MM-DD`. Must be paired with `end_date`. |
 | `end_date` | string | No | — | Upper bound of the log date range, format `YYYY-MM-DD`. Must be paired with `start_date`. |
@@ -111,14 +118,14 @@ curl -X POST https://api.whiteintel.io/get_leaks_by_username.php \
 | Field | Type | Description |
 |---|---|---|
 | `success` | boolean | `true` when the request completed successfully. |
-| `remaining_username_calls` | integer | Remaining requests on the username search quota for the current API key. |
+| `remaining_daily_calls` | integer | Remaining requests on the quota for the current API key. |
 | `results` | array | Array of leak records, sorted by `log_date` in descending order. |
 
 ### Result Object
 
 | Field | Type | Applies To | Description |
 |---|---|---|---|
-| `data_type` | string | All | Either `stealer` or `combolist`. |
+| `data_type` | string | All | Either `stealer`, `combolist`, or `database`. |
 | `url` | string | All | The URL where the credential was captured. |
 | `username` | string | All | The exposed username or email address. Will match the supplied `query`. |
 | `password` | string | All (when `mask_password=0`) | The exposed password in plaintext. Omitted entirely when `mask_password=1`. |
@@ -128,6 +135,9 @@ curl -X POST https://api.whiteintel.io/get_leaks_by_username.php \
 | `ip` | string | `stealer` with `include_system_info=1` | IP address of the infected machine. |
 | `malware_path` | string | `stealer` with `include_system_info=1` | Filesystem path of the stealer binary on the infected machine. |
 | `anti_virus` | string | `stealer` with `include_system_info=1` | Antivirus product reported on the infected machine, if any. |
+| `hashed_password` | string | `database` only | Hashed password from the source breach, when available. |
+| `database_name` | string | `database` only | Name of the source third-party database. |
+| `description` | string | `database` only | Description of the indexed third-party database. |
 
 ---
 
@@ -136,7 +146,7 @@ curl -X POST https://api.whiteintel.io/get_leaks_by_username.php \
 ```json
 {
   "success": true,
-  "remaining_username_calls": 982,
+  "remaining_daily_calls": 982,
   "results": [
     {
       "data_type": "stealer",
@@ -156,6 +166,15 @@ curl -X POST https://api.whiteintel.io/get_leaks_by_username.php \
       "username": "j.smith@example.com",
       "password": "REDACTED_FOR_DOC",
       "log_date": "2025-09-02 12:00:00"
+    },
+    {
+      "data_type": "database",
+      "username": "j.smith@example.com",
+      "password": "REDACTED_FOR_DOC",
+      "hashed_password": "REDACTED_FOR_DOC",
+      "database_name": "ExampleShop 2023",
+      "description": "E-commerce platform breach exposing customer accounts.",
+      "log_date": "2024-11-03 00:00:00"
     }
   ]
 }
@@ -170,7 +189,7 @@ curl -X POST https://api.whiteintel.io/get_leaks_by_username.php \
 }
 ```
 
-> Note: Empty result responses do not consume a username search quota credit.
+> Note: Empty result responses do not consume a quota credit on either counter.
 
 ---
 
@@ -197,12 +216,13 @@ All error responses return a JSON body with either an `error` or `message` field
 
 ## Best Practices
 
-- **Targeted lookups:** This endpoint is designed for one-username-per-call lookups. For broad domain or organization searches, use the Consumer Leaks or Corporate Leaks endpoints.
-- **Quota separation:** Username search quota is tracked separately from the daily request quota. Plan integrations around both counters when mixing endpoint types.
-- **System information:** Set `include_system_info=1` only when host-level context is required for triage.
-- **Password masking:** Use `mask_password=1` for compliance-sensitive integrations.
+- **Targeted lookups:** This endpoint is designed for one-username-per-call lookups. For broad domain or organization searches, use the Consumer Leaks or Corporate Leaks endpoints, which are scoped accordingly and consume a different quota.
+- **Quota separation:** Username search quota is tracked separately from the daily request quota. Plan integrations around both counters when mixing endpoint types in the same workflow.
+- **Source types:** Use `type=database` to surface third-party breach records (with `hashed_password`, `database_name`, and `description` fields) alongside stealer and combolist sources.
+- **System information:** Set `include_system_info=1` only when host-level context is required for triage. Omit otherwise to reduce response size.
+- **Password masking:** Use `mask_password=1` for compliance-sensitive integrations where credential material should not transit downstream systems.
 - **Date filtering:** When ingesting incrementally, use `start_date` and `end_date` to retrieve only newly exposed records since the last sync.
-- **Quota monitoring:** Track the `remaining_username_calls` field after each successful response.
+- **Quota monitoring:** Track the `remaining_daily_calls` field after each successful response to anticipate quota exhaustion before it occurs.
 
 ---
 

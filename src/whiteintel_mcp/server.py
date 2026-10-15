@@ -13,9 +13,10 @@ from mcp.server import MCPServer
 from mcp.server.auth.provider import TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from whiteintel_mcp import __version__
+from whiteintel_mcp.models.common import LeakIds as LeakIDValue
 from whiteintel_mcp.models.endpoints import (
     AuditLogsRequest,
     BreachType,
@@ -43,6 +44,7 @@ from whiteintel_mcp.models.endpoints import (
     ThreatFeedMode,
     ThreatFeedTaxonomy,
     UsernameLeaksRequest,
+    UsernameSourceType,
     WatchlistEntryType,
     WatchlistManageRequest,
     WatchlistStatus,
@@ -50,7 +52,9 @@ from whiteintel_mcp.models.endpoints import (
 from whiteintel_mcp.models.responses import WhiteIntelResponse
 from whiteintel_mcp.services.upstream_rate_limiter import UpstreamRateLimiter
 from whiteintel_mcp.services.whiteintel_client import WhiteIntelClient
-from whiteintel_mcp.tool_errors import to_tool_error
+from whiteintel_mcp.tool_errors import failure_payload
+from whiteintel_mcp.mcp_server import ContractMCPServer
+from whiteintel_mcp.responses import bounded_response_payload as _bounded_response_payload
 from whiteintel_mcp.tool_policy import ToolPolicy, env_flag
 
 
@@ -58,7 +62,36 @@ SERVER_INSTRUCTIONS = (
     "This server exposes WhiteIntel threat intelligence tools for credential exposure, "
     "threat feeds, database leaks, lookalike domains, watchlist management, supplier "
     "security, card check, and audit logs. The API key is read from the "
-    "WHITEINTEL_API_KEY server environment variable."
+    "WHITEINTEL_API_KEY server environment variable. Results are bounded to one "
+    "page by default. Do not paginate through every page or write a local script "
+    "unless the user explicitly requests exhaustive collection or export; use the "
+    "returned completeness and next_action fields to decide whether to continue. "
+    "Public JSON is limited to 64 KiB and strings to 4096 characters; "
+    "next_action=refine_query means local clipping: reduce the page size or narrow "
+    "the query before advancing pages. Failures include error.code and isError=true. "
+    "Full output schema: whiteintel://schemas/response, linked by each tool's _meta."
+    " Investigation workflow: classify the actual input and follow the matching "
+    "tool description. Query relevant exposed, entitled datasets once; use returned "
+    "quota counters and error.code, since there is no user_info preflight. Record "
+    "source coverage gaps; overlapping WhiteIntel datasets are not independent "
+    "corroboration. Start with limit=20 where supported, one page per source, at "
+    "most 100 records, 3 result-derived pivots, and 5 URL checks unless a larger "
+    "budget is requested. Merge API records "
+    "with source tool, record ID, and timestamps, then deduplicate candidate URLs. "
+    "WhiteIntel tools retrieve API records; URL checks are client-side steps that "
+    "use lightweight CLI HTTP commands (curl or wget) for connectivity and content, "
+    "not browser or other heavy tooling. Fetch public HTTP(S) content; label "
+    "homepage URLs derived from bare domains as derived. "
+    "A captured credential url identifies an affected site, not a public leak host. "
+    "Prefer published_url/link for post/news evidence. HTTP 200 alone is not "
+    "content verification: login, CAPTCHA, and block pages are restricted; failed "
+    "requests are unreachable. If no CLI HTTP client (curl or wget) is available "
+    "for a source, including unsupported .onion transport, mark it unverified; "
+    "if no URL exists, mark not_applicable. In the final answer, "
+    "include source tool/record ID, original/final URL, checked_at, HTTP status, "
+    "accessibility, and a short relevant excerpt actually read from accessible "
+    "content, reproduced verbatim without redaction. Keep API "
+    "summaries separate from fetched excerpts; when none are verified, say so."
 )
 
 READ_ONLY_TOOL = ToolAnnotations(
@@ -112,34 +145,80 @@ Limit200 = Annotated[
 ]
 Limit5000 = Annotated[
     int,
-    Field(ge=1, le=5000, description="Maximum records requested, from 1 through 5000."),
+    Field(ge=1, le=1000, description="Maximum records requested per page, from 1 through 1000; paginate for larger collections."),
 ]
 OptionalCardBin = Annotated[
     str | None,
     Field(
         min_length=6,
         max_length=8,
-        pattern=r"^\d{6,8}$",
-        description="Optional six- to eight-digit card issuer identification number.",
+        pattern=r"^(?:[0-9]{6}|[0-9]{8})$",
+        description="Optional card issuer identification number of exactly six or eight digits.",
     ),
 ]
 
 WHITEINTEL_RATE_DISCLOSURE = (
-    " Requires WHITEINTEL_API_KEY; requests use conservative local pacing per "
-    "upstream route and API key (default 0.2 QPS, configurable with "
-    "WHITEINTEL_UPSTREAM_QPS) before provider-directed cooldowns are applied."
+    " Requires WHITEINTEL_API_KEY; requests share per-route/key pacing and provider cooldowns."
+)
+
+LARGE_RESULT_DISCLOSURE = (
+    " Returns one page (default 100 records); follow completeness and next_action."
+)
+
+INVESTIGATION_ROUTES = {
+    "last_leaks": "domain -> recent records -> consumer_leaks/corporate_leaks/database_leaks for broader coverage",
+    "consumer_leaks": "domain -> this + corporate_leaks + database_leaks for complementary records",
+    "corporate_leaks": "email domain -> this + consumer_leaks + database_leaks for complementary records",
+    "database_leaks": "domain -> this + consumer_leaks + corporate_leaks for complementary records",
+    "overall_stats": "domain + metric -> aggregates -> matching domain record tools for URL evidence",
+    "ip_leaks": "exact IP -> this -> returned hostnames/usernames/IDs via computer_leaks/username_leaks/leaks_by_id",
+    "computer_leaks": "hostname -> this -> returned IPs/usernames/IDs via ip_leaks/username_leaks/leaks_by_id",
+    "username_leaks": "username/email -> this -> returned IPs/hostnames/IDs via ip_leaks/computer_leaks/leaks_by_id",
+    "leaks_by_id": "1-5 known leak IDs -> details -> returned IP/hostname/username pivots with matching lookup tools",
+    "threat_feed": "search/filters -> standard posts/news + entitled threat_feed_darkweb_chatters; taxonomy only supplies labels",
+    "threat_feed_darkweb_chatters": "search/filters -> this add-on + threat_feed -> post/news links; taxonomy only supplies labels",
+    "lookalike_domains": "domain -> lookalike domains -> derived homepage candidates; preserve impersonation labels",
+    "watchlist_list": "kind/status filters -> stored entries -> matching domain/IP/hostname/email/search tools",
+    "supplier_list": "supplier filters -> stored domains -> consumer_leaks/corporate_leaks/database_leaks",
+    "card_check": "BIN/issuer/country -> card records (exactly one selector)",
+}
+
+URL_EVIDENCE_WORKFLOW = (
+    " -> merge/dedupe -> curl/wget connectivity/content check -> raw "
+    "snippets + source IDs; no check: unverified, no URL: not_applicable."
+)
+
+LARGE_RESULT_TOOLS = frozenset(
+    {
+        "last_leaks",
+        "threat_feed",
+        "threat_feed_darkweb_chatters",
+        "consumer_leaks",
+        "corporate_leaks",
+        "database_leaks",
+        "ip_leaks",
+        "computer_leaks",
+        "username_leaks",
+        "lookalike_domains",
+        "watchlist_list",
+        "supplier_list",
+        "audit_logs",
+    }
 )
 
 
-class WhiteIntelMCPServer(MCPServer):
+class WhiteIntelMCPServer(ContractMCPServer):
     """Expose shared remote behavior and cross-field constraints to MCP clients."""
 
     async def list_tools(self):
         tools = await super().list_tools()
         exposed_tools = []
         for tool in tools:
+            disclosure = LARGE_RESULT_DISCLOSURE if tool.name in LARGE_RESULT_TOOLS else ""
+            route = INVESTIGATION_ROUTES.get(tool.name)
+            workflow = f" Workflow: {route}{URL_EVIDENCE_WORKFLOW}" if route else ""
             updates = {
-                "description": f"{tool.description or ''}{WHITEINTEL_RATE_DISCLOSURE}",
+                "description": f"{tool.description or ''}{workflow}{disclosure}{WHITEINTEL_RATE_DISCLOSURE}",
             }
             if tool.name == "card_check":
                 input_schema = dict(tool.input_schema)
@@ -192,6 +271,15 @@ SourceFilter = Annotated[
     SourceType,
     Field(description="Exposure source: all, stealer, or combolist."),
 ]
+UsernameSourceFilter = Annotated[
+    UsernameSourceType,
+    Field(
+        description=(
+            "Exposure source: all, stealer, combolist, or database "
+            "(third-party breach records)."
+        )
+    ),
+]
 BreachFilter = Annotated[
     BreachType,
     Field(description="Breach ownership category: all, consumer, or corporate."),
@@ -222,19 +310,19 @@ TaxonomyMode = Annotated[
 ]
 StartDate = Annotated[
     str | None,
-    Field(description="Inclusive UTC start date in YYYY-MM-DD format; provide end_date with it."),
+    Field(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", description="Inclusive UTC start date in YYYY-MM-DD format; provide end_date with it."),
 ]
 EndDate = Annotated[
     str | None,
-    Field(description="Inclusive UTC end date in YYYY-MM-DD format; provide start_date with it."),
+    Field(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", description="Inclusive UTC end date in YYYY-MM-DD format; provide start_date with it."),
 ]
 IndependentStartDate = Annotated[
     str | None,
-    Field(description="Optional inclusive UTC start date in YYYY-MM-DD format."),
+    Field(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", description="Optional inclusive UTC start date in YYYY-MM-DD format."),
 ]
 IndependentEndDate = Annotated[
     str | None,
-    Field(description="Optional inclusive UTC end date in YYYY-MM-DD format."),
+    Field(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", description="Optional inclusive UTC end date in YYYY-MM-DD format."),
 ]
 UsernameFilter = Annotated[
     str | None,
@@ -265,8 +353,8 @@ UsernameQuery = Annotated[
     Field(description="Exact username or email address to investigate."),
 ]
 LeakIds = Annotated[
-    int | list[int],
-    Field(description="One WhiteIntel leak ID or an array containing at most five leak IDs."),
+    LeakIDValue,
+    Field(description="One WhiteIntel leak ID or an array containing one to five positive leak IDs."),
 ]
 WatchlistKind = Annotated[
     WatchlistEntryType | None,
@@ -382,7 +470,7 @@ CardCountries = Annotated[
 ]
 CardDate = Annotated[
     str | None,
-    Field(description="Optional inclusive exposure-date bound in YYYY-MM-DD format."),
+    Field(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", description="Optional inclusive exposure-date bound in YYYY-MM-DD format."),
 ]
 CardSortKey = Annotated[
     CardCheckSortBy,
@@ -449,8 +537,13 @@ def create_server(
         body = request.model_dump(exclude_none=True)
         result = await client.call(endpoint, body)
         if not result.get("success", False):
-            raise to_tool_error(result)
-        return WhiteIntelResponse.model_validate(result)
+            result = failure_payload(result)
+        try:
+            return WhiteIntelResponse.model_validate(_bounded_response_payload(result, body))
+        except ValidationError:
+            return WhiteIntelResponse.model_validate(failure_payload({
+                "http_status": 502, "error": "Invalid response fields from upstream.",
+            }))
 
     @asynccontextmanager
     async def lifespan(server: MCPServer):
@@ -491,7 +584,7 @@ def create_server(
         data_type: SourceFilter = "all",
         breach_type: BreachFilter = "all",
         mask_password: BinaryInt = 0,
-        limit: Limit5000 = 500,
+        limit: Limit5000 = 100,
         page: PositiveInt = 1,
         sort_by: LeakSortKey = "index_date",
     ) -> WhiteIntelResponse:
@@ -594,16 +687,10 @@ def create_server(
     @mcp.tool(
         title="Consumer Credential Exposures",
         description=(
-            "Get credentials stolen from a target domain's own website. Matches the "
-            "URL where credentials were captured — returns records from pages under "
-            "the queried domain regardless of the victim's email domain, revealing "
-            "site-level compromise of the domain itself. Use corporate_leaks "
-            "alongside this tool to also find mailboxes belonging to the queried "
-            "email domain that were compromised on third-party "
-            "sites; the two are complementary and should be called together for full "
-            "exposure coverage. Use database_leaks for third-party database "
-            "breaches, or last_leaks when recency within 30 days is the primary "
-            "filter. This read-only request consumes daily quota."
+            "Find exposed credentials whose captured URL matches the queried domain, "
+            "regardless of the victim's email domain. A match does not establish a "
+            "website breach or current public availability of leaked data. Use "
+            "last_leaks for a recent 1-30 day view. This read-only request consumes daily quota."
         ),
         annotations=READ_ONLY_TOOL,
     )
@@ -612,7 +699,7 @@ def create_server(
         type: SourceFilter = "all",
         include_system_info: BinaryInt = 0,
         mask_password: BinaryInt = 0,
-        limit: Limit5000 = 500,
+        limit: Limit5000 = 100,
         page: PositiveInt = 1,
         start_date: StartDate = None,
         end_date: EndDate = None,
@@ -640,17 +727,10 @@ def create_server(
     @mcp.tool(
         title="Corporate Credential Exposures",
         description=(
-            "Get credentials belonging to an organization's email domain. Matches "
-            "the username's email suffix — returns mailboxes belonging to the "
-            "queried email domain that were "
-            "compromised on any third-party site, regardless of where the "
-            "credential was captured. Non-employees may use the same email domain "
-            "(especially short or generic domains), producing false "
-            "positives; filter results by known employee patterns accordingly. Use "
-            "consumer_leaks alongside this tool to also find credentials stolen "
-            "from the queried domain's own website; the two are complementary and should "
-            "be called together for full exposure coverage. This read-only request "
-            "consumes the configured account's daily quota."
+            "Find exposed credentials by the username's email-domain suffix, regardless "
+            "of the captured site's domain. Shared or generic email domains can include "
+            "non-employees; retain attribution uncertainty. This read-only request "
+            "consumes daily quota."
         ),
         annotations=READ_ONLY_TOOL,
     )
@@ -659,7 +739,7 @@ def create_server(
         type: SourceFilter = "all",
         include_system_info: BinaryInt = 0,
         mask_password: BinaryInt = 0,
-        limit: Limit5000 = 500,
+        limit: Limit5000 = 100,
         page: PositiveInt = 1,
         start_date: StartDate = None,
         end_date: EndDate = None,
@@ -691,7 +771,7 @@ def create_server(
     )
     async def database_leaks(
         query: DomainQuery,
-        limit: Limit5000 = 500,
+        limit: Limit5000 = 100,
         page: PositiveInt = 1,
         start_date: StartDate = None,
         end_date: EndDate = None,
@@ -738,7 +818,7 @@ def create_server(
     async def ip_leaks(
         query: IPAddressQuery,
         mask_password: BinaryInt = 0,
-        limit: Limit5000 = 500,
+        limit: Limit5000 = 100,
         page: PositiveInt = 1,
         start_date: StartDate = None,
         end_date: EndDate = None,
@@ -769,7 +849,7 @@ def create_server(
     async def computer_leaks(
         query: ComputerQuery,
         mask_password: BinaryInt = 0,
-        limit: Limit5000 = 500,
+        limit: Limit5000 = 100,
         page: PositiveInt = 1,
         start_date: StartDate = None,
         end_date: EndDate = None,
@@ -791,19 +871,20 @@ def create_server(
     @mcp.tool(
         title="Username Credential Exposures",
         description=(
-            "Get credential records for an exact username or email address. Use "
-            "computer_leaks for a hostname, ip_leaks for an IP address, or "
-            "consumer_leaks for a domain-wide consumer investigation. This read-only "
-            "request consumes daily quota."
+            "Get credential records for an exact username or email address. Set "
+            "type to 'database' to include third-party breach records alongside "
+            "stealer and combolist sources. Use computer_leaks for a hostname, "
+            "ip_leaks for an IP address, or consumer_leaks for a domain-wide "
+            "consumer investigation. This read-only request consumes daily quota."
         ),
         annotations=READ_ONLY_TOOL,
     )
     async def username_leaks(
         query: UsernameQuery,
-        type: SourceFilter = "all",
+        type: UsernameSourceFilter = "all",
         include_system_info: BinaryInt = 0,
         mask_password: BinaryInt = 0,
-        limit: Limit5000 = 500,
+        limit: Limit5000 = 100,
         page: PositiveInt = 1,
         start_date: StartDate = None,
         end_date: EndDate = None,
@@ -835,7 +916,7 @@ def create_server(
     )
     async def lookalike_domains(
         query: OptionalDomainQuery = None,
-        limit: Limit5000 = 500,
+        limit: Limit5000 = 100,
         page: PositiveInt = 1,
     ) -> WhiteIntelResponse:
         """Get typosquatting and brand-impersonation domains."""
@@ -1159,12 +1240,13 @@ def main() -> None:
         "--transport",
         choices=["stdio", "sse", "streamable-http"],
         default=os.getenv("WHITEINTEL_MCP_TRANSPORT", "stdio"),
-        help="MCP transport to serve.",
+        help="MCP transport: stdio or streamable-http; sse is deprecated legacy compatibility only.",
     )
     parser.add_argument("--host", default=os.getenv("WHITEINTEL_MCP_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.getenv("WHITEINTEL_MCP_PORT", "8000")))
     parser.add_argument("--streamable-http-path", default=os.getenv("WHITEINTEL_MCP_HTTP_PATH", "/mcp"))
-    parser.add_argument("--sse-path", default=os.getenv("WHITEINTEL_MCP_SSE_PATH", "/sse"))
+    parser.add_argument("--sse-path", default=os.getenv("WHITEINTEL_MCP_SSE_PATH", "/sse"),
+                        help="Endpoint for the deprecated legacy HTTP+SSE transport.")
     args = parser.parse_args()
 
     if (

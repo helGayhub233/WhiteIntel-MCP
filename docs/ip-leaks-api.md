@@ -49,7 +49,7 @@ To request access, contact `info@whiteintel.io`.
 
 ## Rate Limits and Quotas
 
-Default request throttle is `0.2 QPS` (1 request every 5 seconds) per account/API key. This conservative default keeps sequential page fetches and concurrent MCP tool calls below common upstream burst-interception thresholds.
+Default request throttle is `0.3 QPS` (1 request every ~3.3 seconds) per account/API key. This conservative default keeps sequential page fetches and concurrent MCP tool calls below common upstream burst-interception thresholds.
 
 Each API key is provisioned with a daily request quota. Remaining quota is returned in every successful response under `remaining_daily_calls`. Once the daily quota is exhausted, requests return a quota-exceeded message until the counter resets.
 
@@ -64,7 +64,7 @@ Empty result responses do not consume a daily quota credit.
 | `apikey` | string | Yes | — | Your Whiteintel API key. |
 | `query` | string | Yes | — | The IP address of the target host. Both IPv4 and IPv6 addresses are accepted. The value is validated as a syntactically valid IP address. |
 | `mask_password` | integer | No | `0` | When set to `1`, the `password` field is omitted from results. |
-| `limit` | integer | No | `500` | Maximum number of records to return. Allowed range: `1`–`5000`. |
+| `limit` | integer | No | `500` | Maximum number of records to return. Provider allowed range: `1`–`5000`; MCP single-call schema cap: `1`–`1000`. |
 | `page` | integer | No | `1` | Page number for pagination. |
 | `start_date` | string | No | — | Lower bound of the log date range, format `YYYY-MM-DD`. Must be paired with `end_date`. |
 | `end_date` | string | No | — | Upper bound of the log date range, format `YYYY-MM-DD`. Must be paired with `start_date`. |
@@ -197,7 +197,7 @@ All error responses return a JSON body with either an `error` or `message` field
 
 - **IP scope:** Each call queries a single IP address. For investigations spanning multiple hosts in a network range, issue one call per IP and aggregate results client-side.
 - **Date filtering:** Use `start_date` and `end_date` to narrow the lookup window when investigating a known infection timeframe. This significantly reduces response size for IPs with long exposure histories.
-- **Pagination:** Hosts with extensive credential capture histories may exceed the default `limit`. Paginate using `page` and `limit` rather than requesting a single oversized result set. The maximum permitted `limit` is `5000`.
+- **Pagination:** Hosts with extensive credential capture histories may exceed the default `limit`. Paginate using `page` and `limit` rather than requesting a single oversized result set. The provider maximum is `5000`; the MCP single-call maximum is `1000`.
 - **Password masking:** Use `mask_password=1` for compliance-sensitive integrations where credential material should not transit downstream systems.
 - **Quota monitoring:** Track the `remaining_daily_calls` field after each successful response to anticipate quota exhaustion before it occurs.
 

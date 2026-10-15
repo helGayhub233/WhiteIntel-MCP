@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 import re
 from datetime import datetime, timezone
@@ -11,7 +12,7 @@ from typing import Any
 
 import httpx
 
-from whiteintel_mcp.services.upstream_rate_limiter import UpstreamRateLimiter
+from whiteintel_mcp.services.upstream_rate_limiter import RateLimitWaitExceeded, UpstreamRateLimiter
 
 
 _ENDPOINT_PATHS: dict[str, str] = {
@@ -35,7 +36,7 @@ _ENDPOINT_PATHS: dict[str, str] = {
 
 _DEFAULT_BASE_URL = "https://api.whiteintel.io"
 _DEFAULT_TIMEOUT = 30.0
-MAX_RETRY_AFTER_SECONDS = 30.0
+MAX_INLINE_RETRY_SECONDS = 30.0
 DEFAULT_429_RETRY_SECONDS = 5.0
 _WAIT_SECONDS_PATTERN = re.compile(
     r"(?:wait|retry(?:\s+after)?)\D{0,20}(\d+(?:\.\d+)?)\s*seconds?",
@@ -48,7 +49,9 @@ def _retry_delay_seconds(result: dict[str, Any]) -> float:
     retry_after = result.get("retry_after")
     if retry_after is not None:
         try:
-            return max(0.0, float(retry_after))
+            seconds = float(retry_after)
+            if math.isfinite(seconds) and seconds >= 0:
+                return seconds
         except (TypeError, ValueError):
             if isinstance(retry_after, str):
                 try:
@@ -65,7 +68,9 @@ def _retry_delay_seconds(result: dict[str, Any]) -> float:
     for key in ("message", "error", "detail"):
         message = result.get(key)
         if isinstance(message, str) and (match := _WAIT_SECONDS_PATTERN.search(message)):
-            return max(0.0, float(match.group(1)))
+            seconds = float(match.group(1))
+            if math.isfinite(seconds):
+                return seconds
     return DEFAULT_429_RETRY_SECONDS
 
 
@@ -112,21 +117,32 @@ class WhiteIntelClient:
                 "error": f"Unknown endpoint: {endpoint}",
             }
 
-        # Pace by the actual upstream route. Logical MCP tools may share one route.
-        await self._rate_limiter.wait(path, str(body.get("apikey", "")))
-        result = await self._post(path, body)
-
-        if result.get("http_status") == 429:
-            retry_after = _retry_delay_seconds(result)
-            await asyncio.sleep(min(retry_after, MAX_RETRY_AFTER_SECONDS))
+        # Every network attempt passes through route/key pacing, including retries.
+        apikey = str(body.get("apikey", ""))
+        for attempt in range(2):
+            remaining = await self._rate_limiter.retry_after(path, apikey)
+            if remaining > MAX_INLINE_RETRY_SECONDS:
+                return {"success": False, "http_status": 429, "retry_after": remaining,
+                        "error": "Provider cooldown is still active. Retry after the reported delay."}
+            try:
+                await self._rate_limiter.wait(path, apikey, max_wait_seconds=MAX_INLINE_RETRY_SECONDS)
+            except RateLimitWaitExceeded as exc:
+                return {"success": False, "http_status": 429, "retry_after": exc.retry_after,
+                        "error": "Request pacing requires a longer wait. Retry after the reported delay."}
             result = await self._post(path, body)
-            if result.get("http_status") == 429:
-                result.setdefault("retry_after", _retry_delay_seconds(result))
-
-        return result
+            if result.get("http_status") != 429:
+                return result
+            retry_after = _retry_delay_seconds(result)
+            result["retry_after"] = retry_after
+            await self._rate_limiter.defer(path, apikey, retry_after)
+            if attempt or retry_after > MAX_INLINE_RETRY_SECONDS:
+                return result
+            await asyncio.sleep(retry_after)
+        return result  # pragma: no cover - both attempts return or exhaust the loop
 
     async def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        assert self._client is not None
+        if self._client is None:
+            raise RuntimeError("WhiteIntel client is not started")
         url = f"{self._base_url}{path}"
 
         try:
@@ -167,5 +183,11 @@ class WhiteIntelClient:
         data["http_status"] = response.status_code
         if retry_after is not None:
             data["retry_after"] = retry_after
-        data.setdefault("success", 200 <= response.status_code < 300)
+        if not 200 <= response.status_code < 300:
+            data["success"] = False
+        elif type(data.get("success")) is not bool:
+            data["success"] = False
+            data.setdefault("error", "Missing or invalid success flag in upstream response.")
+        elif data.get("error"):
+            data["success"] = False
         return data

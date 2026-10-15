@@ -1,7 +1,7 @@
 # Get Leaks By ID API
 
-> Source: https://docs.whiteintel.io/whiteintel-api-doc/leak-discovery/get-leaks-by-id-api
-> date: 2026-05-10
+> Source: https://docs.whiteintel.io/whiteintel-api-doc/leak-discovery/leaks-by-id
+> date: 2026-10-15
 
 The Get Leaks By ID API endpoint returns the complete contents of one or more stealer infection records, identified by their internal log ID. For each requested ID, the response includes the full host-level device profile and every credential captured during that infection event.
 
@@ -49,7 +49,7 @@ To request access, contact `info@whiteintel.io`.
 
 ## Rate Limits and Quotas
 
-Default request throttle is `0.2 QPS` (1 request every 5 seconds) per account/API key. This conservative default keeps batched investigations and concurrent MCP tool calls below common upstream burst-interception thresholds.
+Default request throttle is `0.3 QPS` (1 request every ~3.3 seconds) per account/API key. This conservative default keeps batched investigations and concurrent MCP tool calls below common upstream burst-interception thresholds.
 
 Each API key is provisioned with a daily request quota. Remaining quota is returned in every successful response under `remaining_daily_calls`. Once the daily quota is exhausted, requests return a quota-exceeded message until the counter resets.
 
@@ -118,9 +118,9 @@ curl -X POST https://api.whiteintel.io/get_leaks_by_id.php \
 |---|---|---|
 | `success` | boolean | `true` when the request completed successfully. |
 | `remaining_daily_calls` | integer | Remaining requests on the daily quota for the current API key. |
-| `results` | object or empty array | The shape depends on whether a single ID or an array was supplied. |
+| `results` | object or empty array | The shape depends on whether a single ID or an array was supplied. See below. |
 
-### Single ID Response
+### `results` Shape — Single ID Lookup
 
 When `query` is a single integer, `results` is an object containing two fields:
 
@@ -131,13 +131,13 @@ When `query` is a single integer, `results` is an object containing two fields:
 
 If both fields are empty (no device info and no credentials match the supplied ID), `results` is returned as an empty array (`[]`).
 
-### Batched IDs Response
+### `results` Shape — Batched Lookup
 
 When `query` is an array of integers, `results` is an object keyed by ID (as a string). Each value has the same structure as the single-ID lookup response.
 
 IDs that return no device information and no credentials are omitted from the response object entirely. Submitting five IDs may therefore yield fewer than five entries in the response.
 
-### Compromised Device Information
+### Device Information Object
 
 | Field | Type | Description |
 |---|---|---|
@@ -149,7 +149,7 @@ IDs that return no device information and no credentials are omitted from the re
 | `country` | string \| null | Country attribution of the infected machine. |
 | `log_date` | string (datetime) \| null | The date associated with the infection record. |
 
-### Compromised Credential Object
+### Credential Object
 
 | Field | Type | Description |
 |---|---|---|
@@ -243,7 +243,9 @@ IDs that return no device information and no credentials are omitted from the re
 }
 ```
 
-### Empty Result Set
+### Empty Result
+
+When no records match the supplied ID (single mode), the endpoint returns:
 
 ```json
 {
@@ -252,6 +254,8 @@ IDs that return no device information and no credentials are omitted from the re
   "results": []
 }
 ```
+
+In batched mode, IDs with no matching records are omitted from the `results` object. If none of the supplied IDs match anything, `results` is an empty object (`{}`).
 
 ---
 
@@ -264,7 +268,7 @@ All error responses return a JSON body with either an `error` or `message` field
 | `400` | Invalid request method or non-JSON content type. | `{"error": "Invalid request method or content type, expected POST with application/json."}` |
 | `403` | Missing API key. | `{"error": "API Key is missing."}` |
 | `403` | Invalid API key. | `{"error": "Invalid API Key."}` |
-| `403` | Subscription tier does not permit access. | `{"error": "This endpoint is only available for Threat Intelligence licenses."}` |
+| `403` | Subscription tier does not permit access (endpoint is Threat Intelligence only). | `{"error": "This endpoint is only available for Threat Intelligence licenses."}` |
 | `200` | Daily quota exhausted. | `{"success": false, "message": "Daily API request limit exceeded."}` |
 | `200` | Malformed JSON body. | `{"success": false, "message": "Invalid JSON payload."}` |
 | `200` | `query` is not an integer or array of integers. | `{"success": false, "message": "Invalid query format. Expected an integer or an array of integers."}` |
@@ -282,9 +286,9 @@ All error responses return a JSON body with either an `error` or `message` field
 - **Drilling down from list endpoints:** Use this endpoint to expand the full infection profile behind a single credential hit returned by the list-based endpoints. Pass the `log_id` field from those responses directly as the `query` here.
 - **Batch efficiency:** When investigating multiple suspect infections, batch up to 5 IDs into a single call. Batched requests consume only one daily quota credit while returning all results.
 - **Response shape:** Always inspect the type of `results` before iterating. Single-ID and empty-result responses return different shapes (object vs empty array). Batched responses return an object keyed by string IDs.
-- **Missing IDs in batched mode:** Do not assume one entry per submitted ID. IDs that return no records are omitted from the response object. Reconcile against your input list.
-- **Password masking:** Use `mask_password=1` for compliance-sensitive integrations.
-- **Quota monitoring:** Track the `remaining_daily_calls` field after each successful response.
+- **Missing IDs in batched mode:** Do not assume one entry per submitted ID. IDs that return no records are omitted from the response object. Reconcile against your input list to identify which IDs returned nothing.
+- **Password masking:** Use `mask_password=1` for compliance-sensitive integrations where credential material should not transit downstream systems.
+- **Quota monitoring:** Track the `remaining_daily_calls` field after each successful response to anticipate quota exhaustion before it occurs.
 
 ---
 

@@ -1,7 +1,7 @@
 # Database Leaks API
 
-> Source: https://docs.whiteintel.io/whiteintel-api-doc/leak-discovery/database-leaks-api
-> date: 2026-05-10
+> Source: https://docs.whiteintel.io/whiteintel-api-doc/leak-discovery/third-party-database
+> date: 2026-10-15
 
 The Database Leaks endpoint returns corporate credentials exposed in third-party database breaches for a target domain. Unlike the infostealer-sourced leak endpoints, this dataset is sourced from publicly disclosed breach databases — for example, large platform breaches where account dumps included corporate email addresses.
 
@@ -49,7 +49,7 @@ This endpoint is available to **Enterprise** and **Threat Intelligence** subscri
 
 | Limit Type | Description |
 |---|---|
-| Request throttle | Default `0.2 QPS` (1 request every 5 seconds) per account/API key. Exceeding this returns `429 Too Many Requests`. |
+| Request throttle | Default `0.3 QPS` (1 request every ~3.3 seconds) per account/API key. Exceeding this returns `429 Too Many Requests`. |
 | Daily quota | Each API key is provisioned with a daily request quota. Remaining quota is returned in every successful response under `remaining_daily_calls`. |
 
 Once the daily quota is exhausted, requests return `403 Forbidden` with a quota-exceeded message until the counter resets.
@@ -64,22 +64,22 @@ Empty result responses do not consume a daily quota credit.
 |---|---|---|---|---|
 | `apikey` | string | Yes | — | Your Whiteintel API key. |
 | `query` | string | Yes | — | The target corporate domain (e.g. `example.com`). The endpoint will return database breach records associated with this domain. |
-| `limit` | integer | No | `500` | Maximum number of account records to return across all breach groups. Allowed range: `1`–`5000`. |
+| `limit` | integer | No | `500` | Maximum number of account records to return across all breach groups. Provider allowed range: `1`–`5000`; MCP single-call schema cap: `1`–`1000`. |
 | `page` | integer | No | `1` | Page number for pagination. |
 | `start_date` | string | No | — | Lower bound of the breach date range, format `YYYY-MM-DD`. Must be paired with `end_date`. |
 | `end_date` | string | No | — | Upper bound of the breach date range, format `YYYY-MM-DD`. Must be paired with `start_date`. |
 
 ### Notes on `query`
 
-Supply the registrable corporate domain (for example `example.com`). Subdomains are normalized to their registrable domain before lookup.
+Supply the registrable corporate domain (for example `example.com`). Subdomains are normalized to their registrable domain before lookup. The endpoint matches against the search domain associated with each breach record in the underlying dataset.
 
 ### Notes on date filters
 
-Both `start_date` and `end_date` must be supplied together. The date range is matched against the **breach date** (when the breach occurred), not when the records were ingested into the platform.
+Both `start_date` and `end_date` must be supplied together. Supplying only one returns a validation error. Dates must conform to `YYYY-MM-DD` format. The date range is matched against the **breach date** (when the breach occurred), not when the records were ingested into the platform.
 
-### Notes on `limit`
+### Notes on pagination
 
-The `limit` parameter caps the total number of **account records** returned, summed across all breach groups in the response. Pagination flows across breach groups in a stable order.
+The `limit` parameter caps the total number of **account records** returned, summed across all breach groups in the response. Pagination flows across breach groups in a stable order, so paginating with `page=1`, `page=2`, etc. produces a consistent traversal of all matching records regardless of how they are distributed across breach sources.
 
 ---
 
@@ -112,6 +112,8 @@ curl -X POST https://api.whiteintel.io/get_third_party_db_leaks.php \
 
 ### Breach Group Object
 
+Each entry in `results` represents one breach source containing exposed records for the queried domain.
+
 | Field | Type | Description |
 |---|---|---|
 | `database_name` | string | The name of the breach source (e.g. the breached service or dataset name). |
@@ -121,7 +123,7 @@ curl -X POST https://api.whiteintel.io/get_third_party_db_leaks.php \
 | `total` | integer | Total number of records in this breach group for the queried domain (across all pages). |
 | `page` | integer | Echo of the requested `page` value. |
 | `limit` | integer | Echo of the requested `limit` value. |
-| `accounts` | array | Array of account record objects exposed in this breach. |
+| `accounts` | array | Array of account record objects exposed in this breach for the queried domain. |
 
 ### Account Record Object
 
@@ -132,7 +134,7 @@ curl -X POST https://api.whiteintel.io/get_third_party_db_leaks.php \
 | `password` | string \| null | Plaintext password, when available in the source breach. |
 | `hashed_password` | string \| null | Hashed password, when available in the source breach. The hash format depends on the breach source. |
 
-> Whether `password`, `hashed_password`, or both are populated depends entirely on what was exposed by the original breach.
+> Whether `password`, `hashed_password`, or both are populated depends entirely on what was exposed by the original breach. Some breaches expose only hashes; others expose only plaintext; some expose both.
 
 ---
 
@@ -189,6 +191,8 @@ curl -X POST https://api.whiteintel.io/get_third_party_db_leaks.php \
 
 ### Empty Result Set
 
+When no breach records match the query, the endpoint returns:
+
 ```json
 {
   "success": true,
@@ -202,6 +206,8 @@ curl -X POST https://api.whiteintel.io/get_third_party_db_leaks.php \
 
 ## Error Responses
 
+All error responses return a JSON body with either an `error` or `message` field describing the failure.
+
 | HTTP Status | Condition | Example Response |
 |---|---|---|
 | `400` | Invalid request method or non-JSON content type. | `{"error": "Invalid request method or content type, expected POST with application/json."}` |
@@ -209,7 +215,7 @@ curl -X POST https://api.whiteintel.io/get_third_party_db_leaks.php \
 | `403` | Invalid API key. | `{"error": "Invalid API Key."}` |
 | `403` | Subscription tier does not permit access. | `{"error": "Database leak API is only available for Enterprise and Threat Intelligence licenses."}` |
 | `403` | Daily quota exhausted. | `{"error": "Daily limit is reached."}` |
-| `429` | Request throttle hit. | `{"message": "Please wait 5 seconds between requests."}` |
+| `429` | Request throttle hit (consecutive requests too close together). | `{"message": "Please wait 1 seconds between requests."}` |
 | `200` | Validation error in request body. | `{"success": false, "error": "Limit must be an integer between 1 and 5000."}` |
 | `200` | Empty or missing `query`. | `{"success": false, "error": "Query cannot be empty."}` |
 | `200` | Date pairing error. | `{"success": false, "error": "Both start_date and end_date must be provided together."}` |
@@ -217,15 +223,17 @@ curl -X POST https://api.whiteintel.io/get_third_party_db_leaks.php \
 | `200` | Query targets a restricted domain. | `{"success": false, "error": "This query is restricted."}` |
 | `200` | Daily quota exhausted between pre-check and increment. | `{"success": false, "message": "Daily API request limit exceeded."}` |
 
+> Validation errors are returned with HTTP `200` and `success: false`. Clients should always inspect the `success` field in addition to the HTTP status code.
+
 ---
 
 ## Best Practices
 
-- **Pagination:** For organizations exposed across many breaches, paginate using `page` and `limit`. Pagination flows across breach groups. The maximum permitted `limit` is `5000`.
-- **Date filtering:** Use `start_date` and `end_date` to scope to a specific era of breaches.
-- **Hash handling:** When `hashed_password` is populated, the hash format varies by breach source (`bcrypt`, `MD5`, `SHA-1`, `SHA-256`, etc.). Inspect `data_fields` and `breach_description` for hints.
-- **Aggregation by employee:** Group account records by `email` after retrieval to identify which employees appear in multiple breaches.
-- **Quota monitoring:** Track the `remaining_daily_calls` field after each successful response.
+- **Pagination:** For organizations exposed across many breaches, paginate using `page` and `limit` rather than requesting a single oversized result set. Pagination flows across breach groups, so a stable traversal is guaranteed regardless of distribution. The provider maximum is `5000`; the MCP single-call maximum is `1000`.
+- **Date filtering:** Use `start_date` and `end_date` to scope to a specific era of breaches. This is particularly useful for ongoing monitoring — narrow the window to recent breach dates to identify newly disclosed exposures.
+- **Hash handling:** When `hashed_password` is populated, the hash format varies by breach source (`bcrypt`, `MD5`, `SHA-1`, `SHA-256`, etc.). Inspect `data_fields` and `breach_description` for hints; do not assume a uniform format.
+- **Aggregation by employee:** When integrating with HR or identity systems, group account records by `email` after retrieval to identify which employees appear in multiple breaches. The endpoint returns records grouped by breach source, not by user.
+- **Quota monitoring:** Track the `remaining_daily_calls` field after each successful response to anticipate quota exhaustion before it occurs.
 
 ---
 

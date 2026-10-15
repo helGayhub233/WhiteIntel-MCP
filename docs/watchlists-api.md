@@ -21,7 +21,7 @@
 
 ## Rate Limits and Quotas
 
-Default request throttle is `0.2 QPS` (1 request every 5 seconds) per account/API key. Watchlist add/remove operations mutate account state, so keeping the same conservative default as read-only endpoints avoids accidental bursts from MCP client concurrency.
+Default request throttle is `0.3 QPS` (1 request every ~3.3 seconds) per account/API key. Watchlist add/remove operations mutate account state, so keeping the same conservative default as read-only endpoints avoids accidental bursts from MCP client concurrency.
 
 ---
 

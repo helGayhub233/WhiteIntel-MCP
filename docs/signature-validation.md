@@ -1,7 +1,7 @@
 # Signature Validation
 
 > Source: https://docs.whiteintel.io/whiteintel-api-doc/webhooks/signature-validation
-> date: 2025-07-10
+> date: 2026-10-15
 
 To ensure the authenticity of incoming webhook requests from WhiteIntel, you **must verify the HMAC signature** of each request.
 
@@ -29,6 +29,7 @@ You must:
 ## Important Notes
 
 - Use constant-time comparison (e.g. `hash_equals` in PHP, `hmac.compare_digest` in Python, `timingSafeEqual` in Node.js) to avoid timing attacks.
+- The HMAC base string is the `X-Timestamp` header value only. Do not include the request body in the signed input.
 - Optionally reject if `X-Timestamp` is too old (recommended: ±5 minutes).
 - Event `description` values are static based on the match types and will never change unless officially announced.
 
@@ -77,7 +78,7 @@ const app = express();
 const SECRET = "your_hmac_secret";
 const MAX_SKEW_MS = 5 * 60 * 1000; // 5 minutes
 
-app.use(express.json());
+app.use(express.json()); // No raw-body buffering required: the signature covers the X-Timestamp value only
 
 app.post("/webhook", (req, res) => {
   const timestamp = req.header("X-Timestamp");

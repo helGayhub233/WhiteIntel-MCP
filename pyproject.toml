@@ -1,6 +1,6 @@
 [project]
 name = "whiteintel-mcp"
-version = "0.5.0"
+version = "0.6.0"
 description = "WhiteIntel MCP server for credential exposure, threat feed, watchlist, and supplier intelligence APIs"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,9 +23,14 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "mcp>=2.0.0,<3",
+    "mcp[cli]>=2.3.0,<3",
     "httpx[socks]>=0.27.0",
     "pydantic>=2.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "jsonschema>=4.20.0,<5",
 ]
 
 [project.urls]
